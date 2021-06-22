@@ -21,5 +21,19 @@ def mock_input(batch_size):
     object_sizes = torch.randint(high=4, size=(batch_size,10), dtype=torch.long)
     with open(osp.dirname(osp.dirname(__file__)) + '/config.yaml', 'r') as fin:
         config =yaml.load(fin, Loader=yaml.FullLoader)
-    model = Deltaformer(config)
-    model()
+    model = DeltaFormer(config)
+    a,b,c = model(positions=positions,
+            types=types, 
+            object_positions=object_positions,
+            object_colors=object_colors,
+            object_shapes=object_shapes,
+            object_materials=object_materials,
+            object_sizes=object_sizes,
+            scene_state=scene_state,
+            questions=questions)
+    print(a.size())
+    print(b.size())
+    print(c.size())
+    
+    
+mock_input(50)

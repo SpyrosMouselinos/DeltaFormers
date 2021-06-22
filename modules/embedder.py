@@ -135,8 +135,8 @@ class DeltaFormer(Module):
         self.classhead = MLPClassifierHead(config)
         return
     
-    def forward(self, inputs):
-        embeddings, mask, obj_mask = self.mme(inputs)
+    def forward(self, **kwargs):
+        embeddings, mask, obj_mask = self.mme(**kwargs)
         out = self.be.forward(embeddings, mask, output_all_encoded_layers=False, output_attention_probs=False)
         ### Be returns List ###
         out = out[0]
@@ -155,12 +155,4 @@ class DeltaFormer(Module):
         answer = self.classhead(cls_output)
         return answer, filtered_item_output, scene_output
 
-def test_embedder():
-    with open(osp.dirname(osp.dirname(__file__)) + '/config.yaml', 'r') as fin:
-        config =yaml.load(fin, Loader=yaml.FullLoader)
-        
-        
-    deltaformer = DeltaFormer(config)
-    answer, item_output, filtered_item_output, scene_output = deltaformer.forward(None)   
-    print(answer.size())
 
