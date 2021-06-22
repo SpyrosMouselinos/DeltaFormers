@@ -3,6 +3,7 @@ question_vocabulary_size: 50
 embedding_dim: 64
 hidden_dim: 128
 inter_dim: 256
-n_token_types: 3
+num_token_types: 3
 num_attention_heads: 1
 num_bert_layers: 5
+num_output_classes: 50
