@@ -164,7 +164,3 @@ def test_embedder():
     answer, item_output, filtered_item_output, scene_output = deltaformer.forward(None)   
     print(answer.size())
 
-
-
-    
-test_embedder()
