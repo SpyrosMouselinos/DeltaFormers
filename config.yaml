@@ -1,9 +1,30 @@
 max_objects_per_scene: 10
-question_vocabulary_size: 50
-embedding_dim: 64
+max_question_tokens_per_scene: 50
+question_vocabulary_size: 93
+embedding_dim: 32
 hidden_dim: 128
 inter_dim: 256
-num_token_types: 3
-num_attention_heads: 1
-num_bert_layers: 5
-num_output_classes: 50
+num_token_types: 4
+num_attention_heads: 8
+num_bert_layers: 1
+num_output_classes: 32
+
+num_colors: 8
+num_shapes: 5
+num_materials: 2
+num_sizes: 2
+num_positions: 3
+num_scene_positions: 4
+num_questions_per_image: 10
+
+
+max_epochs: 100
+num_train_batches: 10_000
+batch_size: 64
+lr: 0.01
+scheduler_step_size: 30
+scheduler_gamma: 0.5
+log_every: 100
+validate_every: 2_000
+
+
