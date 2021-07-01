@@ -6,8 +6,9 @@ hidden_dim: 128
 inter_dim: 256
 num_token_types: 4
 num_attention_heads: 8
-num_bert_layers: 1
-num_output_classes: 32
+num_bert_layers: 5
+num_output_classes: 28
+use_bidirectional_encoder: 1
 
 num_colors: 8
 num_shapes: 5
@@ -20,11 +21,16 @@ num_questions_per_image: 10
 
 max_epochs: 100
 num_train_batches: 10_000
-batch_size: 64
-lr: 0.01
-scheduler_step_size: 30
+batch_size: 128
+lr: 0.5
+scheduler_step_size: 100
 scheduler_gamma: 0.5
 log_every: 100
-validate_every: 2_000
+validate_every: 2000
 
 
+g_layers: [256,256,256,256]
+question_injection_position: 0
+f_fc1: 256
+f_fc2: 256
+rl_dropout: 0.2

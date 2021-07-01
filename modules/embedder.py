@@ -1,50 +1,72 @@
 import sys
-sys.path.insert(0, './bert_modules/')
 
-import yaml
-import os.path as osp
+sys.path.insert(0, './bert_modules/')
+sys.path.insert(0, './relation_network_modules/')
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn import Module as Module
-import matplotlib.pyplot as plt
-from bert_modules import BertEncoder, BertLayerNorm
+from bert_modules import BertEncoder, BertLayerNorm, PositionalEncoding
+from relation_network_modules import RelationalLayer
+
+
+class DiversityLoss(Module):
+    def __init__(self, weight=1.0):
+        super(DiversityLoss, self).__init__()
+        self.weight = weight
+
+    def forward(self, inputs, targets):
+        # Flatten Predictions #
+        inputs = torch.argmax(inputs, dim=1).view(-1)
+
+        # Flatten True Labels #
+        targets = targets.view(-1)
+
+        # Find all wrong guesses #
+        misguesses = (inputs != targets)
+
+        responses = torch.masked_select(inputs, misguesses)
+
+        return self.weight - torch.std(responses.to(float))
+
 
 class MultiModalEmbedder(Module):
     def __init__(self, config: dict):
-        super(MultiModalEmbedder,self).__init__()
+        super(MultiModalEmbedder, self).__init__()
         self.config = config
-        self.question_embeddings    = nn.Embedding(config['question_vocabulary_size'], config['hidden_dim'], padding_idx=0)
-        self.position_embeddings    = nn.Embedding(config['max_objects_per_scene'] + 1 + config['max_question_tokens_per_scene'], config['hidden_dim'])
-        self.token_type_embeddings  = nn.Embedding(config['num_token_types'], config['hidden_dim'], padding_idx=0)
-        self.color_embeddings       = nn.Embedding(config['num_colors'], config['embedding_dim'])
-        self.shape_embeddings       = nn.Embedding(config['num_shapes'], config['embedding_dim'])
-        self.material_embeddings    = nn.Embedding(config['num_materials'], config['embedding_dim'])
-        self.size_embeddings        = nn.Embedding(config['num_sizes'], config['embedding_dim'])
-        
-        self.position_project = nn.Linear(config['num_positions'], config['embedding_dim'])
-        self.scene_project    = nn.Linear(config['num_scene_positions'], config['hidden_dim'])
-        self.reproject        = nn.Linear(5 * config['embedding_dim'], config['hidden_dim'])
-        
-        # self.pros_norm        = BertLayerNorm(config['embedding_dim'], eps=1e-12)
-        # self.scene_norm       = BertLayerNorm(config['hidden_dim'], eps=1e-12)
-        # self.color_norm       = BertLayerNorm(config['embedding_dim'], eps=1e-12)
-        # self.shape_norm       = BertLayerNorm(config['embedding_dim'], eps=1e-12)
-        # self.material_norm    = BertLayerNorm(config['embedding_dim'], eps=1e-12)
-        # self.size_norm        = BertLayerNorm(config['embedding_dim'], eps=1e-12)
+        self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['hidden_dim'], padding_idx=0)
+        self.position_embeddings = nn.Embedding(
+            config['max_objects_per_scene'] + config['max_question_tokens_per_scene'], config['hidden_dim'],
+            padding_idx=0)
+        self.token_type_embeddings = nn.Embedding(config['num_token_types'], config['hidden_dim'], padding_idx=0)
+        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0)
+        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
+        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
 
-        self.pros_norm        = lambda x: x
-        self.scene_norm       = lambda x: x
-        self.color_norm       = lambda x: x
-        self.shape_norm       = lambda x: x
-        self.material_norm    = lambda x: x
-        self.size_norm        = lambda x: x
-        
-        self.LayerNorm        = BertLayerNorm(config['hidden_dim'], eps=1e-12)
-        #self.dropout          = nn.Dropout(0.1)
-        self.dropout          = lambda x: x
+        self.position_project = nn.Linear(config['num_positions'], config['embedding_dim'])
+        self.reproject = nn.Linear(5 * config['embedding_dim'], config['hidden_dim'])
+
+        self.pros_norm = lambda x: x
+        self.scene_norm = lambda x: x
+        self.color_norm = lambda x: x
+        self.shape_norm = lambda x: x
+        self.material_norm = lambda x: x
+        self.size_norm = lambda x: x
+
+        self.LayerNormObject = BertLayerNorm(config['hidden_dim'], eps=1e-12)
+        self.PosEncQ = PositionalEncoding(config['hidden_dim'], 0.0, 50)
+        self.LayerNormQ = BertLayerNorm(config['hidden_dim'], eps=1e-12)
+        self.dropout = nn.Dropout(0.1)
         return
-    
+
+    @staticmethod
+    def word_to_object_mask(types):
+        omask = types.ge(1) * 1.0
+        qmask = types.ge(2) * 1.0
+        stacked_obj = torch.stack([omask] * omask.size(1), dim=1)
+        return torch.einsum("bij,bi->bij", stacked_obj, omask)
+
     def forward(self,
                 positions,
                 types,
@@ -53,137 +75,213 @@ class MultiModalEmbedder(Module):
                 object_shapes,
                 object_materials,
                 object_sizes,
-                scene_state,
-                questions,
-                answers=None):
-
+                question):
         ### Generate active positions ###
         position_embeddings = self.position_embeddings(positions)
-        
-        
-        ### Generate types ###              #1 CLS -- --4-- Items--- 6 empty --- 1 scene-- 50 word question -- #
+
+        ### Generate types ####1 CLS -- --4-- Items--- 6 empty -- 50 word question -- #
         type_embeddings = self.token_type_embeddings(types)
-        
-        
+
         ### Get Tokenized and Padded Questions ###
         ### BS X Q_SEQ_LEN X Reproj Emb
-        questions = self.question_embeddings(questions)
-        
+        questions = self.question_embeddings(question)
+
         # ### Get Tokenized and Padded Answers ###
         # ### BS X 1 
         # answers  = torch.cat([torch.LongTensor([5]).view(1,1) for _ in range(0,16)], 0)
         # ### BS X 1 X Reproj Emb
         # answers  = self.answer_embeddings(answers)
-        
+
         ### Generate Attention Mask ###
         mask = types.ge(1) * 1.0
         mask = mask.unsqueeze(1).unsqueeze(2)
-        mask = (1.0 - mask) * -10000.0
-        
+        # mask = self.word_to_object_mask(types)
+        mask = (1.0 - mask) * -100_000
+        # mask = mask.unsqueeze(1)
+
         ### Generate Object Mask ###
         object_mask = types.eq(1) * 1.0
-        
+
         ### Gather all positions ###
         ### Projected Version ###
         ### BS X SEQ_LEN X EMB_DIM
         op_proj = self.pros_norm(self.position_project(object_positions))
-        
-        ### Gather scene state ###
-        ### Projected Version ###
-        ### BS X SEQ_LEN X EMB_DIM
-        ss_proj = self.scene_norm(self.scene_project(scene_state))
-        
+
         ### Gather all colors ###
         ### Get embeddings ###
-        oc_proj =  self.color_norm(self.color_embeddings(object_colors))
-        
+        oc_proj = self.color_norm(self.color_embeddings(object_colors))
+
         ### Gather all shapes ###
         ### Get embeddings ###
-        os_proj =  self.shape_norm(self.shape_embeddings(object_shapes))
-        
+        os_proj = self.shape_norm(self.shape_embeddings(object_shapes))
+
         ### Gather all materials ###
         ### Get embeddings ###
-        om_proj =  self.material_norm(self.material_embeddings(object_materials))
-        
+        om_proj = self.material_norm(self.material_embeddings(object_materials))
+
         ### Gather all sizes ###
         ### Get embeddings ###
-        oz_proj =  self.size_norm(self.size_embeddings(object_sizes))
-        object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj],2)
+        oz_proj = self.size_norm(self.size_embeddings(object_sizes))
+        object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
         ### Reproject them to 128 sized-embeddings ###
         ore = self.reproject(object_related_embeddings)
-        
-        ### Stack all embeddings on the sequence dimension ###
-        pre_augmentation_embeddings = torch.cat([ore, ss_proj, questions], 1)
-        augmentation_embeddings = position_embeddings + type_embeddings
-        
-        embeddings = pre_augmentation_embeddings + augmentation_embeddings
-        embeddings = self.LayerNorm(embeddings)
-        embeddings = self.dropout(embeddings)
+
+        ore = ore + type_embeddings[:, 0:10, :]
+        ore = self.LayerNormObject(ore)
+
+        questions = questions + type_embeddings[:, 10:, :] + position_embeddings[:, 10:, :]
+        questions = self.LayerNormQ(questions)
+
+        embeddings = torch.cat([ore, questions], 1)
         return embeddings, mask, object_mask
+
+
+class SplitModalEmbedder(Module):
+    def __init__(self, config: dict):
+        super(SplitModalEmbedder, self).__init__()
+        self.config = config
+        self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['embedding_dim'], padding_idx=0)
+        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0)
+        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
+        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.position_project = nn.Linear(config['num_positions'], config['embedding_dim'])
+        self.reproject = nn.Linear(5 * config['embedding_dim'], config['hidden_dim'])
+        return
+
+    def forward(self,
+                positions,
+                types,
+                object_positions,
+                object_colors,
+                object_shapes,
+                object_materials,
+                object_sizes,
+                question):
+        object_mask = types.eq(1) * 1.0
+        question_mask = types.eq(2) * 1.0
+        questions = self.question_embeddings(question)
+        op_proj = self.position_project(object_positions)
+        oc_proj = self.color_embeddings(object_colors)
+        os_proj = self.shape_embeddings(object_shapes)
+        om_proj = self.material_embeddings(object_materials)
+        oz_proj = self.size_embeddings(object_sizes)
+        object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
+        ore = self.reproject(object_related_embeddings)
+        return ore, questions, object_mask, question_mask
+
 
 class MLPClassifierHead(Module):
     def __init__(self, config: dict, use_log_transform=False, mode='raw'):
-        super(MLPClassifierHead,self).__init__()
-        self.linear_layer_1  = nn.Linear(config['hidden_dim'], config['hidden_dim'])
-        self.linear_layer_2  = nn.Linear(config['hidden_dim'], config['num_output_classes'])
-        
+        super(MLPClassifierHead, self).__init__()
+        self.linear_layer_1 = nn.Linear(config['hidden_dim'], config['hidden_dim'])
+        self.linear_layer_2 = nn.Linear(config['hidden_dim'], config['num_output_classes'])
+
         if mode == 'arg':
-            self.softmax_layer =  lambda x: torch.argmax(x, dim=1, keepdim=True)
+            self.softmax_layer = lambda x: torch.argmax(x, dim=1, keepdim=True)
         elif mode == 'soft':
             if use_log_transform:
-                self.softmax_layer =  nn.LogSoftmax(dim=1)
+                self.softmax_layer = nn.LogSoftmax(dim=1)
             else:
-                self.softmax_layer =  nn.Softmax(dim=1)
+                self.softmax_layer = nn.Softmax(dim=1)
         elif mode == 'raw':
-            self.softmax_layer =  lambda x: x
+            self.softmax_layer = lambda x: x
         else:
             raise NotImplementedError(f"Mode: {mode} not implemented in MLPClassifierHead Module...")
         return
-    
+
     def forward(self, input):
         input = nn.ReLU()(self.linear_layer_1(input))
         return self.softmax_layer(self.linear_layer_2(input))
-    
+
+
 class ConcatClassifierHead(Module):
     def __init__(self, config: dict):
-        super(ConcatClassifierHead,self).__init__()
-        self.linear_layer_1  = nn.Linear(config['max_objects_per_scene'] * config['hidden_dim'], config['hidden_dim'])
-        self.linear_layer_2  = nn.Linear(config['hidden_dim'], config['num_output_classes'])
-    
+        super(ConcatClassifierHead, self).__init__()
+        self.linear_layer_1 = nn.Linear(config['max_objects_per_scene'] * config['hidden_dim'], config['hidden_dim'])
+        self.linear_layer_2 = nn.Linear(config['hidden_dim'], config['num_output_classes'])
+
     def forward(self, input_set):
         flat_set = input_set.view(input_set.size(0), -1)
         flat_set = nn.ReLU()(self.linear_layer_1(flat_set))
         return self.linear_layer_2(flat_set)
-    
-    
+
+
+class PerOutputClassifierHead(Module):
+    def __init__(self, config: dict):
+        super(PerOutputClassifierHead, self).__init__()
+        self.linear_layer_1 = nn.Linear(config['hidden_dim'], config['hidden_dim'] // 2)
+        self.linear_layer_2 = nn.Linear(config['hidden_dim'] // 2, 1)
+        self.linear_layer_3 = nn.Linear(config['max_objects_per_scene'], config['num_output_classes'])
+
+    def forward(self, input_set):
+        reduced_set = self.linear_layer_1(input_set)
+        reduced_set = nn.ReLU()(reduced_set)
+        reduced_set = self.linear_layer_2(reduced_set)
+        reduced_set = nn.ReLU()(reduced_set)
+        flat_set = reduced_set.view(reduced_set.size(0), -1)
+        return self.linear_layer_3(flat_set)
+
+
+class QuestionEmbedModel(Module):
+    def __init__(self, config: dict):
+        super(QuestionEmbedModel, self).__init__()
+        self.bidirectional = bool(config['use_bidirectional_encoder'])
+        self.lstm = nn.LSTM(config['embedding_dim'], config['hidden_dim'], batch_first=True,
+                            bidirectional=self.bidirectional)
+        self.reduce = nn.Linear(2 * config['hidden_dim'], config['hidden_dim'])
+
+    def forward(self, question):
+        self.lstm.flatten_parameters()
+        _, (h, c) = self.lstm(question)
+        h = torch.transpose(h, 1, 0)
+        h = h.reshape(h.size(0), h.size(1) * h.size(2))
+        h = self.reduce(h)
+        return h
+
+
 class DeltaFormer(Module):
     def __init__(self, config: dict):
-        super(DeltaFormer,self).__init__()
+        super(DeltaFormer, self).__init__()
         self.mme = MultiModalEmbedder(config)
-        self.be  = BertEncoder(config)
+        self.be = BertEncoder(config)
         self.classhead = MLPClassifierHead(config)
         self.concathead = ConcatClassifierHead(config)
+        self.perhead = PerOutputClassifierHead(config)
         return
-    
+
     def forward(self, **kwargs):
         embeddings, mask, obj_mask = self.mme(**kwargs)
-        out = self.be.forward(embeddings, mask, output_all_encoded_layers=False, output_attention_probs=False)
-        ### Be returns List ###
-        out = out[0]
+        out, atts = self.be.forward(embeddings, mask, output_all_encoded_layers=False, output_attention_probs=True)
 
         ### Get the Item Outputs - Tokens 0-10 ##
-        item_output = out[:,0:10]
+        item_output = out[-1][:, 0:10]
 
         ### Filtered Output ###
-        filtered_item_output = item_output * obj_mask[:,0:10].unsqueeze(2)
+        filtered_item_output = item_output * obj_mask[:, 0:10].unsqueeze(2)
 
         ### Get the Scene Output - Token 11 - ##
-        scene_output = out[:,10]
+        # scene_output = out[:, 10]
 
         ### Get the [START] output - Token 12 - ##
-        cls_output = out[:,11]
-        answer = self.classhead(cls_output)
-        filtered_item_output = self.concathead(filtered_item_output)
-        return answer, filtered_item_output, scene_output
+        # cls_output = out[-1][:, 10]
+        # answer = self.classhead(cls_output)
+        # filtered_item_output = self.concathead(filtered_item_output)
+        answer = self.perhead(filtered_item_output)
+        return answer, atts[-1], None
 
 
+class DeltaRN(Module):
+    def __init__(self, config: dict):
+        super(DeltaRN, self).__init__()
+        self.sme = SplitModalEmbedder(config)
+        self.seq = QuestionEmbedModel(config)
+        self.rn  = RelationalLayer(config)
+        return
+
+    def forward(self, **kwargs):
+        ore, questions, object_mask, question_mask = self.sme(**kwargs)
+        qst = self.seq(questions)
+        answer = self.rn(ore, qst)
+
+        return answer, None, None

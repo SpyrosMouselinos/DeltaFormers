@@ -1,5 +1,6 @@
-import math
 import copy
+import math
+
 import torch
 import torch.nn as nn
 from torch.nn import Module as Module
@@ -13,8 +14,9 @@ def gelu(x):
     """
     return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
 
+
 class PositionalEncoding(Module):
-    
+
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
@@ -28,9 +30,10 @@ class PositionalEncoding(Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        x = x + self.pe[:x.size(0), :]
+        x = x + torch.transpose(self.pe, 1, 0)
         return self.dropout(x)
-    
+
+
 class BertLayerNorm(Module):
     def __init__(self, hidden_size, eps=1e-12):
         """
@@ -60,7 +63,7 @@ class BertSelfAttention(Module):
         self.all_head_size = self.num_attention_heads * self.attention_head_size
 
         self.query = nn.Linear(config['hidden_dim'], self.all_head_size)
-        self.key   = nn.Linear(config['hidden_dim'], self.all_head_size)
+        self.key = nn.Linear(config['hidden_dim'], self.all_head_size)
         self.value = nn.Linear(config['hidden_dim'], self.all_head_size)
 
         self.dropout = nn.Dropout(0.1)
@@ -84,7 +87,6 @@ class BertSelfAttention(Module):
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
         attention_scores = attention_scores + attention_mask
- 
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -106,9 +108,9 @@ class BertSelfAttention(Module):
 class BertSelfOutput(Module):
     def __init__(self, config):
         super(BertSelfOutput, self).__init__()
-        self.dense     = nn.Linear(config['hidden_dim'], config['hidden_dim'])
+        self.dense = nn.Linear(config['hidden_dim'], config['hidden_dim'])
         self.LayerNorm = BertLayerNorm(config['hidden_dim'], eps=1e-12)
-        self.dropout   = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
@@ -139,7 +141,6 @@ class BertIntermediate(Module):
         self.dense = nn.Linear(config['hidden_dim'], config['inter_dim'])
         self.intermediate_act_fn = gelu
 
-
     def forward(self, hidden_states):
         hidden_states = self.dense(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
@@ -149,9 +150,9 @@ class BertIntermediate(Module):
 class BertOutput(Module):
     def __init__(self, config):
         super(BertOutput, self).__init__()
-        self.dense     = nn.Linear(config['inter_dim'], config['hidden_dim'])
+        self.dense = nn.Linear(config['inter_dim'], config['hidden_dim'])
         self.LayerNorm = BertLayerNorm(config['hidden_dim'], eps=1e-12)
-        self.dropout   = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, hidden_states, input_tensor):
         hidden_states = self.dense(hidden_states)
@@ -185,7 +186,7 @@ class BertEncoder(Module):
         layer = BertLayer(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config['num_bert_layers'])])
 
-    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=True, output_attention_probs=False):
+    def forward(self, hidden_states, attention_mask, output_all_encoded_layers=False, output_attention_probs=True):
         all_encoder_layers = []
         all_attention_probs = []
         for layer_module in self.layer:

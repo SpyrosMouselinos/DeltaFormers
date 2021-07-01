@@ -1,43 +1,43 @@
 translation:
-    "cube": 0
-    "sphere": 1
-    "cylinder": 2
-    "bullet": 3
-    "butterfly": 4
-    "gray": 0
-    "red": 1
-    "blue": 2
-    "green": 3
-    "brown": 4
-    "purple": 5
-    "cyan": 6
-    "yellow": 7
-    "rubber": 0
-    "metal": 1
-    "large": 0
-    "small": 1
+    "cube": 1
+    "sphere": 2
+    "cylinder": 3
+    "bullet": 4
+    "butterfly": 5
+    "gray": 1
+    "red": 2
+    "blue": 3
+    "green": 4
+    "brown": 5
+    "purple": 6
+    "cyan": 7
+    "yellow": 8
+    "rubber": 1
+    "metal": 2
+    "large": 1
+    "small": 2
 
 reverse_translation_shape:
-    0: "cube"
-    1: "sphere"
-    2: "cylinder"
-    3: "bullet"
-    4: "butterfly"
+    1: "cube"
+    2: "sphere"
+    3: "cylinder"
+    4: "bullet"
+    5: "butterfly"
 
 reverse_translation_color:
-    0: "gray"
-    1: "red"
-    2: "blue"
-    3: "green"
-    4: "brown"
-    5: "purple"
-    6: "cyan"
-    7: "yellow"
+    1: "gray"
+    2: "red"
+    3: "blue"
+    4: "green"
+    5: "brown"
+    6: "purple"
+    7: "cyan"
+    8: "yellow"
 
 reverse_translation_material:
-    0: "rubber"
-    1: "metal"
+    1: "rubber"
+    2: "metal"
 
-reverse_translation_size":
-    0: "large"
-    1: "small"
+reverse_translation_size:
+    1: "large"
+    2: "small"
