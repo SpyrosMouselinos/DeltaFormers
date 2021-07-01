@@ -1,7 +1,7 @@
 max_objects_per_scene: 10
 max_question_tokens_per_scene: 50
 question_vocabulary_size: 93
-embedding_dim: 32
+embedding_dim: 128
 hidden_dim: 128
 inter_dim: 256
 num_token_types: 4
@@ -19,15 +19,15 @@ num_scene_positions: 4
 num_questions_per_image: 10
 
 
-max_epochs: 100
-num_train_batches: 10_000
-batch_size: 128
-lr: 0.5
-scheduler_step_size: 100
-scheduler_gamma: 0.5
+max_epochs: 5
+batch_size: 64
+lr: 0.00025
+scheduler_step_size: 5
+scheduler_gamma: 1.5
 log_every: 100
 validate_every: 2000
-
+early_stopping: 3
+save_every_epochs: 100
 
 g_layers: [256,256,256,256]
 question_injection_position: 0

@@ -1,13 +1,12 @@
 import json
 import os.path as osp
+import pickle
 import sys
-
 
 from tqdm import trange
 
 sys.path.insert(0, osp.abspath('..'))
 import torch
-import random
 import yaml
 from torch.utils.data import Dataset
 
@@ -145,25 +144,48 @@ class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
     def __init__(self, config=None, split='val'):
-        if config is None:
-            with open(osp.dirname(osp.dirname(__file__)) + '/config.yaml', 'r') as fin:
-                config = yaml.load(fin, Loader=yaml.FullLoader)
-        with open(osp.dirname(osp.dirname(__file__)) + '/translation_tables.yaml', 'r') as fin:
-            translation = yaml.load(fin, Loader=yaml.FullLoader)['translation']
-        with open(f'data/vocab.json', 'r') as fin:
-            parsed_json = json.load(fin)
-            q2index = parsed_json['question_token_to_idx']
-            a2index = parsed_json['answer_token_to_idx']
 
-        self.split = split
-        self.config = config
-        self.translation = translation
-        self.q2index = q2index
-        self.a2index = a2index
-        x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index)
-        self.x = x
-        self.y = y
-        print("Dataset loaded succesfully!\n")
+        # if config is None:
+        #     with open(osp.dirname(osp.dirname(__file__)) + '/config.yaml', 'r') as fin:
+        #         config = yaml.load(fin, Loader=yaml.FullLoader)
+
+        if osp.exists(f'data/{split}_dataset.pt'):
+            with open(f'data/{split}_dataset.pt', 'rb')as fin:
+                info = pickle.load(fin)
+            self.split = info['split']
+            self.translation = info['translation']
+            self.q2index = info['q2index']
+            self.a2index = info['a2index']
+            self.x = info['x']
+            self.y = info['y']
+            print("Dataset loaded succesfully!\n")
+        else:
+            with open(osp.dirname(osp.dirname(__file__)) + '/translation_tables.yaml', 'r') as fin:
+                translation = yaml.load(fin, Loader=yaml.FullLoader)['translation']
+            with open(f'data/vocab.json', 'r') as fin:
+                parsed_json = json.load(fin)
+                q2index = parsed_json['question_token_to_idx']
+                a2index = parsed_json['answer_token_to_idx']
+
+            self.split = split
+            # self.config = config
+            self.translation = translation
+            self.q2index = q2index
+            self.a2index = a2index
+            x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index)
+            self.x = x
+            self.y = y
+            print("Dataset loaded succesfully!...Saving\n")
+            info = {
+                'split': self.split,
+                'translation': self.translation,
+                'q2index': self.q2index,
+                'a2index': self.a2index,
+                'x': self.x,
+                'y': self.y
+            }
+            with open(f'data/{self.split}_dataset.pt', 'wb') as fout:
+                pickle.dump(info, fout)
 
     def __len__(self):
         return len(self.x)
@@ -173,7 +195,7 @@ class StateCLEVR(Dataset):
             idx = idx.tolist()
         return self.x[idx], self.y[idx]
 
-#import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 # with open('../config.yaml', 'r') as fin:
 #     config = yaml.load(fin, Loader=yaml.FullLoader)
 #
