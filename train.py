@@ -78,10 +78,10 @@ def train_model(config, device, experiment_name='experiment_1'):
         device = 'cuda:0'
     with open(config, 'r') as fin:
         config = yaml.load(fin, Loader=yaml.FullLoader)
-    train_dataloader = torch.utils.data.DataLoader(StateCLEVR(config=config, split='val'),
+    train_dataloader = torch.utils.data.DataLoader(StateCLEVR(config=config, split='train'),
                                                    batch_size=config['batch_size'], shuffle=True)
-    #val_dataloader = torch.utils.data.DataLoader(StateCLEVR(config=config, split='val'),
-    #                                             batch_size=config['batch_size'], shuffle=False)
+    val_dataloader = torch.utils.data.DataLoader(StateCLEVR(config=config, split='val'),
+                                                batch_size=config['batch_size'], shuffle=False)
 
     model = DeltaSQFormer(config)
     model = model.to(device)
@@ -101,34 +101,34 @@ def train_model(config, device, experiment_name='experiment_1'):
         for train_batch_index, train_batch in enumerate(train_dataloader):
             if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0 and train_batch_index > 0:
                 pass
-                # total_val_loss = 0.
-                # total_val_acc = 0.
-                # # Turn off the train mode #
-                # model.eval()
-                # with torch.no_grad():
-                #     for val_batch_index, val_batch in enumerate(val_dataloader):
-                #         data, y_real = val_batch
-                #         data = kwarg_dict_to_device(data, device)
-                #         y_real = y_real.to(device)
-                #         y_pred = model(**data)[0]
-                #         val_loss = criterion(y_pred, y_real.squeeze(1))
-                #         val_acc = metric(y_pred, y_real.squeeze(1))
-                #         total_val_loss += val_loss.item()
-                #         total_val_acc += val_acc
-                #         break
-                # print('| epoch {:3d} | val loss {:5.2f} | val acc {:5.2f} \n'.format(epoch,
-                #                                                                      total_val_loss / (
-                #                                                                              val_batch_index + 1),
-                #                                                                      total_val_acc / (
-                #                                                                              val_batch_index + 1)))
-                # if total_val_loss / (val_batch_index + 1) < best_val_loss:
-                #     best_val_loss = total_val_loss / (val_batch_index + 1)
-                #     save_all(model, optimizer, scheduler, epoch, best_val_loss, f'./results/{experiment_name}')
-                # else:
-                #     overfit_count += 1
-                #     if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
-                #         print(f"Training stopped at epoch: {epoch} and best validation loss: {best_val_loss}")
-                #model.train()
+                total_val_loss = 0.
+                total_val_acc = 0.
+                # Turn off the train mode #
+                model.eval()
+                with torch.no_grad():
+                    for val_batch_index, val_batch in enumerate(val_dataloader):
+                        data, y_real = val_batch
+                        data = kwarg_dict_to_device(data, device)
+                        y_real = y_real.to(device)
+                        y_pred = model(**data)[0]
+                        val_loss = criterion(y_pred, y_real.squeeze(1))
+                        val_acc = metric(y_pred, y_real.squeeze(1))
+                        total_val_loss += val_loss.item()
+                        total_val_acc += val_acc
+                        break
+                print('| epoch {:3d} | val loss {:5.2f} | val acc {:5.2f} \n'.format(epoch,
+                                                                                     total_val_loss / (
+                                                                                             val_batch_index + 1),
+                                                                                     total_val_acc / (
+                                                                                             val_batch_index + 1)))
+                if total_val_loss / (val_batch_index + 1) < best_val_loss:
+                    best_val_loss = total_val_loss / (val_batch_index + 1)
+                    save_all(model, optimizer, scheduler, epoch, best_val_loss, f'./results/{experiment_name}')
+                else:
+                    overfit_count += 1
+                    if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
+                        print(f"Training stopped at epoch: {epoch} and best validation loss: {best_val_loss}")
+                model.train()
             else:
                 # Turn on the train mode #
                 data, y_real = train_batch
