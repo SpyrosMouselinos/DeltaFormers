@@ -1,13 +1,9 @@
-import sys
-
-sys.path.insert(0, './bert_modules/')
-sys.path.insert(0, './relation_network_modules/')
-
 import torch
 import torch.nn as nn
 from torch.nn import Module as Module
-from bert_modules import BertEncoder, BertLayerNorm, PositionalEncoding
-from relation_network_modules import RelationalLayer
+
+from bert_modules.bert_modules import BertLayerNorm, PositionalEncoding, BertEncoder
+from relation_network_modules.relation_network_modules import RelationalLayer
 
 
 class DiversityLoss(Module):
@@ -153,11 +149,9 @@ class SplitModalEmbedder(Module):
                 object_materials,
                 object_sizes,
                 question):
-
         type_embeddings = self.token_type_embeddings(types)
-        otype_embeddings = type_embeddings[:,0:10]
-        qtype_embeddings = type_embeddings[:,10:]
-
+        otype_embeddings = type_embeddings[:, 0:10]
+        qtype_embeddings = type_embeddings[:, 10:]
 
         object_mask = types.eq(1) * 1.0
         object_mask = object_mask[:, :10]
@@ -167,7 +161,7 @@ class SplitModalEmbedder(Module):
         question_mask = question_mask[:, 10:]
         question_mask = question_mask.unsqueeze(1).unsqueeze(2)
 
-        mixed_mask = torch.cat([object_mask,question_mask], dim=3)
+        mixed_mask = torch.cat([object_mask, question_mask], dim=3)
 
         questions = self.question_embeddings(question)
         questions = questions + qtype_embeddings
@@ -181,6 +175,49 @@ class SplitModalEmbedder(Module):
         ore = ore + otype_embeddings
         return ore, questions, object_mask, question_mask, mixed_mask
 
+class SplitModalEmbedderNoType(Module):
+    def __init__(self, config: dict):
+        super(SplitModalEmbedderNoType, self).__init__()
+        self.config = config
+        self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['embedding_dim'],
+                                                padding_idx=0)
+        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0)
+        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
+        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.reproject = nn.Linear(3 + 4 * config['embedding_dim'], config['hidden_dim'])
+        return
+
+    def forward(self,
+                positions,
+                types,
+                object_positions,
+                object_colors,
+                object_shapes,
+                object_materials,
+                object_sizes,
+                question):
+
+        object_mask = types.eq(1) * 1.0
+        object_mask = object_mask[:, :10]
+        object_mask = object_mask.unsqueeze(1).unsqueeze(2)
+
+        question_mask = types.eq(2) * 1.0
+        question_mask = question_mask[:, 10:]
+        question_mask = question_mask.unsqueeze(1).unsqueeze(2)
+
+        mixed_mask = torch.cat([object_mask, question_mask], dim=3)
+
+        questions = self.question_embeddings(question)
+        questions = questions
+        op_proj = object_positions
+        oc_proj = self.color_embeddings(object_colors)
+        os_proj = self.shape_embeddings(object_shapes)
+        om_proj = self.material_embeddings(object_materials)
+        oz_proj = self.size_embeddings(object_sizes)
+        object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
+        ore = self.reproject(object_related_embeddings)
+        return ore, questions, object_mask, question_mask, mixed_mask
 
 class QuestionOnlyEmbedder(Module):
     def __init__(self, config: dict):
@@ -295,7 +332,7 @@ class DeltaFormer(Module):
 class DeltaRN(Module):
     def __init__(self, config: dict):
         super(DeltaRN, self).__init__()
-        self.sme = SplitModalEmbedder(config)
+        self.sme = SplitModalEmbedderNoType(config)
         self.seq = QuestionEmbedModel(config)
         self.rn = RelationalLayer(config)
         return
@@ -326,11 +363,12 @@ class DeltaSQFormer(Module):
         question_emb = self.pos_enc(question_emb)
         question_emb = self.qln(question_emb)
         embeddings = torch.cat([object_emb, question_emb], dim=1)
-        out, atts = self.be.forward(embeddings, mixed_mask, output_all_encoded_layers=False, output_attention_probs=True)
+        out, atts = self.be.forward(embeddings, mixed_mask, output_all_encoded_layers=False,
+                                    output_attention_probs=True)
         item_output = out[-1][:, 0]
         answer = self.classhead(item_output)
 
-        #answer = self.avghead(out[-1])
+        # answer = self.avghead(out[-1])
         return answer, atts[-1], None
 
 

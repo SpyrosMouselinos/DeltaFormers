@@ -11,6 +11,48 @@ import yaml
 from torch.utils.data import Dataset
 
 
+class BatchSizeScheduler:
+    def __init__(self, train_ds, initial_bs, step_size, gamma, max_bs):
+        self.train_ds = train_ds
+        self.current_bs = initial_bs
+        self.max_bs = max_bs
+        self.step_size = step_size
+        self.gamma = gamma
+        self._current_steps = 0
+
+    def reset(self):
+        self._current_steps = 0
+        return
+
+    def step(self):
+        if self.step_size != -1:
+            self._current_steps += 1
+            if self._current_steps % self.step_size == 0 and self._current_steps > 0:
+                self.current_bs = min(self.current_bs * self.gamma, self.max_bs)
+            return torch.utils.data.DataLoader(self.train_ds, batch_size=self.current_bs, shuffle=True)
+        else:
+            torch.utils.data.DataLoader(self.train_ds, batch_size=self.current_bs, shuffle=True)
+
+    def state_dict(self):
+        info = {
+            'train_ds': self.train_ds,
+            'current_bs': self.current_bs,
+            'max_bs': self.max_bs,
+            'step_size': self.step_size,
+            'gamma': self.gamma,
+            'current_steps': self._current_steps
+        }
+        return info
+
+    def load_state_dict(self, state_dict):
+        self.train_ds = state_dict['train_ds']
+        self.current_bs = state_dict['current_bs']
+        self.max_bs = state_dict['max_bs']
+        self.step_size = state_dict['step_size']
+        self.gamma = state_dict['gamma']
+        self._current_steps = state_dict['current_steps']
+
+
 def scene_parser(mode='val'):
     with open(f'data/CLEVR_{mode}_scenes.json', 'r') as fin:
         parsed_json = json.load(fin)
@@ -144,15 +186,6 @@ class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
     def __init__(self, config=None, split='val'):
-
-        # if config is None:
-        #     with open(osp.dirname(osp.dirname(__file__)) + '/config.yaml', 'r') as fin:
-        #         config = yaml.load(fin, Loader=yaml.FullLoader)
-        #         limit = config['data_limit']
-        # if split == 'train':
-        #     limit = 50_000
-        # else:
-        #     limit = 5_000
         if osp.exists(f'data/{split}_dataset.pt'):
             with open(f'data/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
