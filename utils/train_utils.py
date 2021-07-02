@@ -148,7 +148,11 @@ class StateCLEVR(Dataset):
         # if config is None:
         #     with open(osp.dirname(osp.dirname(__file__)) + '/config.yaml', 'r') as fin:
         #         config = yaml.load(fin, Loader=yaml.FullLoader)
-
+        #         limit = config['data_limit']
+        # if split == 'train':
+        #     limit = 50_000
+        # else:
+        #     limit = 5_000
         if osp.exists(f'data/{split}_dataset.pt'):
             with open(f'data/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)

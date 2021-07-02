@@ -4,7 +4,7 @@ question_vocabulary_size: 93
 embedding_dim: 128
 hidden_dim: 128
 inter_dim: 256
-num_token_types: 4
+num_token_types: 3
 num_attention_heads: 8
 num_bert_layers: 5
 num_output_classes: 28
@@ -19,14 +19,15 @@ num_scene_positions: 4
 num_questions_per_image: 10
 
 
-max_epochs: 5
+max_epochs: 170
 batch_size: 64
-lr: 0.00025
+lr: 0.00005
+max_lr: 0.0005
 scheduler_step_size: 5
-scheduler_gamma: 1.5
+scheduler_gamma: 2
 log_every: 100
-validate_every: 2000
-early_stopping: 3
+validate_every: 20000
+early_stopping: 10
 save_every_epochs: 100
 
 g_layers: [256,256,256,256]
@@ -34,3 +35,5 @@ question_injection_position: 0
 f_fc1: 256
 f_fc2: 256
 rl_dropout: 0.2
+
+data_limit: 5000

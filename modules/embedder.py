@@ -136,13 +136,11 @@ class SplitModalEmbedder(Module):
         self.config = config
         self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['embedding_dim'],
                                                 padding_idx=0)
-        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0,
-                                             max_norm=1)
-        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0,
-                                             max_norm=1)
-        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0,
-                                                max_norm=1)
-        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0, max_norm=1)
+        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0)
+        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
+        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.token_type_embeddings = nn.Embedding(config['num_token_types'], config['hidden_dim'], padding_idx=0)
         self.reproject = nn.Linear(3 + 4 * config['embedding_dim'], config['hidden_dim'])
         return
 
@@ -155,6 +153,12 @@ class SplitModalEmbedder(Module):
                 object_materials,
                 object_sizes,
                 question):
+
+        type_embeddings = self.token_type_embeddings(types)
+        otype_embeddings = type_embeddings[:,0:10]
+        qtype_embeddings = type_embeddings[:,10:]
+
+
         object_mask = types.eq(1) * 1.0
         object_mask = object_mask[:, :10]
         object_mask = object_mask.unsqueeze(1).unsqueeze(2)
@@ -166,6 +170,7 @@ class SplitModalEmbedder(Module):
         mixed_mask = torch.cat([object_mask,question_mask], dim=3)
 
         questions = self.question_embeddings(question)
+        questions = questions + qtype_embeddings
         op_proj = object_positions
         oc_proj = self.color_embeddings(object_colors)
         os_proj = self.shape_embeddings(object_shapes)
@@ -173,7 +178,7 @@ class SplitModalEmbedder(Module):
         oz_proj = self.size_embeddings(object_sizes)
         object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
         ore = self.reproject(object_related_embeddings)
-        ore = ore / torch.linalg.norm(ore, ord=2, dim=2).unsqueeze(2)
+        ore = ore + otype_embeddings
         return ore, questions, object_mask, question_mask, mixed_mask
 
 
@@ -308,6 +313,8 @@ class DeltaSQFormer(Module):
         super(DeltaSQFormer, self).__init__()
         self.sme = SplitModalEmbedder(config)
         self.pos_enc = PositionalEncoding(d_model=config['embedding_dim'], dropout=0.1, max_len=50)
+        self.oln = BertLayerNorm(config['hidden_dim'])
+        self.qln = BertLayerNorm(config['hidden_dim'])
         self.be = BertEncoder(config)
         self.classhead = MLPClassifierHead(config)
         self.avghead = PerOutputClassifierHead(config)
@@ -315,13 +322,15 @@ class DeltaSQFormer(Module):
 
     def forward(self, **kwargs):
         object_emb, question_emb, _, _, mixed_mask = self.sme(**kwargs)
+        object_emb = self.oln(object_emb)
         question_emb = self.pos_enc(question_emb)
+        question_emb = self.qln(question_emb)
         embeddings = torch.cat([object_emb, question_emb], dim=1)
         out, atts = self.be.forward(embeddings, mixed_mask, output_all_encoded_layers=False, output_attention_probs=True)
-        # item_output = out[-1][:, 0]
-        # answer = self.classhead(item_output)
+        item_output = out[-1][:, 0]
+        answer = self.classhead(item_output)
 
-        answer = self.avghead(out[-1])
+        #answer = self.avghead(out[-1])
         return answer, atts[-1], None
 
 
