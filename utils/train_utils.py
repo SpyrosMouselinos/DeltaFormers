@@ -31,7 +31,7 @@ class BatchSizeScheduler:
                 self.current_bs = min(self.current_bs * self.gamma, self.max_bs)
             return torch.utils.data.DataLoader(self.train_ds, batch_size=self.current_bs, shuffle=True)
         else:
-            torch.utils.data.DataLoader(self.train_ds, batch_size=self.current_bs, shuffle=True)
+            return torch.utils.data.DataLoader(self.train_ds, batch_size=self.current_bs, shuffle=True)
 
     def state_dict(self):
         info = {

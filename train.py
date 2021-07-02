@@ -213,8 +213,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_rn_cls')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_rn.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_q_cls')
+    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_q.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     args = parser.parse_args()
