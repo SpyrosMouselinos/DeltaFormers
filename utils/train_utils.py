@@ -12,7 +12,7 @@ sys.path.insert(0, osp.abspath('..'))
 import torch
 import yaml
 from torch.utils.data import Dataset
-from torch.utils.data import Dataset
+from natsort import natsorted
 
 
 class BatchSizeScheduler:
@@ -64,7 +64,7 @@ def image_finder(mode='val'):
     for candidate in available:
         if mode in candidate and candidate.endswith('.png'):
             good_images.append(candidate)
-    return good_images
+    return natsorted(good_images)
 
 
 def scene_parser(mode='val'):
@@ -227,9 +227,12 @@ def visual_image_matcher(split, q2index, a2index):
 
                 # Increment and Loop #
                 question_counter += 1
-            else:
+            elif image_index_scene < image_index_question:
                 # Question is for the next image #
                 break
+            elif image_index_scene > image_index_question:
+                # Question is for a previous image #
+                question_counter += 1
     return x_samples, y_samples
 
 
