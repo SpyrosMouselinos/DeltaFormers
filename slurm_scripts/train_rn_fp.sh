@@ -3,6 +3,7 @@
 #SBATCH --partition=common
 #SBATCH --qos=4gpu7d
 #SBATCH --gres=gpu:1
+#SBATCH --nodelist=asusgpu3
 #SBATCH --time=840
 #SBATCH --output=./train_rn_fp.log
 
