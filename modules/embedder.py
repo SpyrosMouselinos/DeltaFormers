@@ -6,24 +6,52 @@ from bert_modules.bert_modules import BertLayerNorm, PositionalEncoding, BertEnc
 from relation_network_modules.relation_network_modules import RelationalLayer
 
 
-class DiversityLoss(Module):
-    def __init__(self, weight=1.0):
-        super(DiversityLoss, self).__init__()
-        self.weight = weight
+class ConvInputModel(Module):
+    def __init__(self):
+        super(ConvInputModel, self).__init__()
 
-    def forward(self, inputs, targets):
-        # Flatten Predictions #
-        inputs = torch.argmax(inputs, dim=1).view(-1)
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=24, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.batchNorm1 = nn.BatchNorm2d(24)
+        self.conv2 = nn.Conv2d(in_channels=24, out_channels=24, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.batchNorm2 = nn.BatchNorm2d(24)
+        self.conv3 = nn.Conv2d(in_channels=24, out_channels=24, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.batchNorm3 = nn.BatchNorm2d(24)
+        self.conv4 = nn.Conv2d(in_channels=24, out_channels=24, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
+        self.batchNorm4 = nn.BatchNorm2d(24)
+        self.coord_tensor = None
 
-        # Flatten True Labels #
-        targets = targets.view(-1)
+    def build_coord_tensor(self, b, d):
+        coords = torch.linspace(-d / 2., d / 2., d)
+        x = coords.unsqueeze(0).repeat(d, 1)
+        y = coords.unsqueeze(1).repeat(1, d)
+        ct = torch.stack((x, y))
+        ct = ct.unsqueeze(0).repeat(b, 1, 1, 1)
+        coord_tensor = torch.autograd.Variable(ct, requires_grad=False)
+        if next(self.parameters()).is_cuda:
+            coord_tensor = coord_tensor.to('cuda:0')
+        return  coord_tensor
 
-        # Find all wrong guesses #
-        misguesses = (inputs != targets)
+    def forward(self, img):
+        x = self.conv1(img)
+        x = self.batchNorm1(x)
+        x = nn.ReLU()(x)
+        x = self.conv2(x)
+        x = self.batchNorm2(x)
+        x = nn.ReLU()(x)
+        x = self.conv3(x)
+        x = self.batchNorm3(x)
+        x = nn.ReLU()(x)
+        x = self.conv4(x)
+        x = self.batchNorm4(x)
+        x = nn.ReLU()(x)
 
-        responses = torch.masked_select(inputs, misguesses)
+        b, k, d, _ = x.size()
+        x = x.view(b, k, d * d)  # (B x 24 x 8*8)
+        coord_tensor = self.build_coord_tensor(b, d).view(b, 2, d * d)  # (B x 2 x 8*8)
 
-        return self.weight - torch.std(responses.to(float))
+        x = torch.cat([x, coord_tensor], 1)  # (B x 24+2 x 8*8)
+        x = x.permute(0, 2, 1)  # (B x 64 x 24+2)
+        return x
 
 
 class MultiModalEmbedder(Module):
@@ -175,6 +203,7 @@ class SplitModalEmbedder(Module):
         ore = ore + otype_embeddings
         return ore, questions, object_mask, question_mask, mixed_mask
 
+
 class SplitModalEmbedderNoType(Module):
     def __init__(self, config: dict):
         super(SplitModalEmbedderNoType, self).__init__()
@@ -197,7 +226,6 @@ class SplitModalEmbedderNoType(Module):
                 object_materials,
                 object_sizes,
                 question):
-
         object_mask = types.eq(1) * 1.0
         object_mask = object_mask[:, :10]
         object_mask = object_mask.unsqueeze(1).unsqueeze(2)
@@ -218,6 +246,21 @@ class SplitModalEmbedderNoType(Module):
         object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
         ore = self.reproject(object_related_embeddings)
         return ore, questions, object_mask, question_mask, mixed_mask
+
+
+class VisualEmbedderNoType(Module):
+    def __init__(self, config: dict):
+        super(VisualEmbedderNoType, self).__init__()
+        self.config = config
+        self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['embedding_dim'],
+                                                padding_idx=0)
+        return
+
+    def forward(self,
+                image,
+                question):
+        return image, self.question_embeddings(question)
+
 
 class QuestionOnlyEmbedder(Module):
     def __init__(self, config: dict):
@@ -345,6 +388,24 @@ class DeltaRN(Module):
         return answer, None, None
 
 
+class DeltaRNFP(Module):
+    def __init__(self, config: dict):
+        super(DeltaRNFP, self).__init__()
+        self.ve = VisualEmbedderNoType(config)
+        self.cn = ConvInputModel()
+        self.seq = QuestionEmbedModel(config)
+        self.rn = RelationalLayer(config)
+        return
+
+    def forward(self, **kwargs):
+        visual, questions = self.ve(**kwargs)
+        ore = self.cn(visual)
+        qst = self.seq(questions)
+        answer = self.rn(ore, qst)
+
+        return answer, None
+
+
 class DeltaSQFormer(Module):
     def __init__(self, config: dict):
         super(DeltaSQFormer, self).__init__()
@@ -388,3 +449,5 @@ class DeltaQFormer(Module):
         item_output = out[-1][:, 0]
         answer = self.classhead(item_output)
         return answer, atts[-1], None
+
+

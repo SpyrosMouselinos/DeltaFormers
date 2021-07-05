@@ -10,9 +10,17 @@ sys.path.insert(0, osp.abspath('.'))
 import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
-from utils.train_utils import StateCLEVR, BatchSizeScheduler
+from utils.train_utils import StateCLEVR, ImageCLEVR, BatchSizeScheduler
+
+AVAILABLE_DATASETS = {
+    'DeltaRN': StateCLEVR,
+    'DeltaSQFormer': StateCLEVR,
+    'DeltaQFormer': StateCLEVR,
+    'DeltaRNFP': ImageCLEVR,
+}
 
 AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
+                    'DeltaRNFP': DeltaRNFP,
                     'DeltaSQFormer': DeltaSQFormer,
                     'DeltaQFormer': DeltaQFormer}
 
@@ -95,14 +103,16 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         print(f"Loading Model of type: {config['model_architecture']}\n", flush=True)
         model = model.to(device)
         model.train()
+        #TODO: Change this!
+        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
 
-        train_set = StateCLEVR(config=config, split='val')
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], shuffle=True)
 
-        val_set = StateCLEVR(config=config, split='val')
+        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
 
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], shuffle=False)
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'])
+
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
                                                     gamma=config['scheduler_gamma'])
 
@@ -121,11 +131,12 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         print(f"Loading Model of type: {config['model_architecture']}\n", flush=True)
         model = model.to(device)
         model.train()
+        # TODO: Change this!
 
-        train_set = StateCLEVR(config=config, split='val')
+        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], shuffle=True)
 
-        val_set = StateCLEVR(config=config, split='val')
+        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], shuffle=False)
 
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
@@ -133,7 +144,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                                                     gamma=config['scheduler_gamma'])
 
         bs_scheduler = BatchSizeScheduler(train_ds=train_set, initial_bs=config['batch_size'],
-                                          step_size=config['bs_scheduler_step_size'], gamma=config['bs_scheduler_gamma'],
+                                          step_size=config['bs_scheduler_step_size'],
+                                          gamma=config['bs_scheduler_gamma'],
                                           max_bs=config['max_batch_size'])
         init_epoch = 0
 
@@ -169,7 +181,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                                                                                              val_batch_index + 1)))
                 if total_val_loss / (val_batch_index + 1) < best_val_loss:
                     best_val_loss = total_val_loss / (val_batch_index + 1)
-                    save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss, f'./results/{experiment_name}')
+                    save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
+                             f'./results/{experiment_name}')
                     overfit_count = -1
                 else:
                     overfit_count += 1
@@ -188,6 +201,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                 acc = metric(y_pred, y_real.squeeze(1))
 
                 loss.backward()
+                # Gradient Clipping
+                if config['clip_grad_norm'] != -1:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), config['clip_grad_norm'])
+
                 optimizer.step()
 
                 total_loss += loss.item()
@@ -213,8 +230,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_q_cls')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_q.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_rn_fp_cls')
+    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_rn_fp.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     args = parser.parse_args()

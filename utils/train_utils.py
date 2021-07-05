@@ -1,13 +1,17 @@
 import json
+import os
 import os.path as osp
 import pickle
 import sys
 
+from PIL import Image
+from torchvision import transforms
 from tqdm import trange
 
 sys.path.insert(0, osp.abspath('..'))
 import torch
 import yaml
+from torch.utils.data import Dataset
 from torch.utils.data import Dataset
 
 
@@ -51,6 +55,16 @@ class BatchSizeScheduler:
         self.step_size = state_dict['step_size']
         self.gamma = state_dict['gamma']
         self._current_steps = state_dict['current_steps']
+
+
+def image_finder(mode='val'):
+    ### Discover and return all available images ###
+    good_images = []
+    available = os.listdir(f'data/images/{mode}')
+    for candidate in available:
+        if mode in candidate and candidate.endswith('.png'):
+            good_images.append(candidate)
+    return good_images
 
 
 def scene_parser(mode='val'):
@@ -182,6 +196,43 @@ def scene_image_matcher(split, translation, q2index, a2index):
     return x_samples, y_samples
 
 
+def visual_image_matcher(split, q2index, a2index):
+    ### All images ###
+    images = image_finder(split)
+
+    ### All questions ###
+    questions = question_parser(split)
+
+    x_samples = []
+    y_samples = []
+    question_counter = 0
+    for scene_counter in trange(len(images)):
+        image_index_scene = int(images[scene_counter].split('.png')[0].split(f'{split}_')[-1])
+        while question_counter < len(questions):
+            image_index_question, n_tokens, q, a = single_question_parser(questions[question_counter],
+                                                                          word_replace_dict={'True': 'yes',
+                                                                                             'False': 'no'},
+                                                                          q2index=q2index,
+                                                                          a2index=a2index)
+            # Bad question Move on #
+            if q is None and a is None:
+                question_counter += 1
+                continue
+
+            if image_index_scene == image_index_question:
+                x_samples.append({'image_filename': images[scene_counter],
+                                  'question': q,
+                                  })
+                y_samples.append(a)
+
+                # Increment and Loop #
+                question_counter += 1
+            else:
+                # Question is for the next image #
+                break
+    return x_samples, y_samples
+
+
 class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
@@ -231,6 +282,65 @@ class StateCLEVR(Dataset):
         if torch.is_tensor(idx):
             idx = idx.tolist()
         return self.x[idx], self.y[idx]
+
+
+class ImageCLEVR(Dataset):
+    """CLEVR dataset made from Images."""
+
+    def __init__(self, config=None, split='val'):
+        if split == 'train':
+            self.transform = transforms.Compose([transforms.Resize((128, 128)),
+                                                 transforms.Pad(8),
+                                                 transforms.RandomCrop((128, 128)),
+                                                 transforms.RandomRotation(2.8),  # .05 rad
+                                                 transforms.ToTensor()])
+        else:
+            self.transform = transforms.Compose([transforms.Resize((128, 128)),
+                                                 transforms.ToTensor()])
+        if osp.exists(f'data/{split}_image_dataset.pt'):
+            with open(f'data/{split}_image_dataset.pt', 'rb')as fin:
+                info = pickle.load(fin)
+            self.split = info['split']
+            self.q2index = info['q2index']
+            self.a2index = info['a2index']
+            self.x = info['x']
+            self.y = info['y']
+            print("Dataset loaded succesfully!\n")
+        else:
+            self.split = split
+            with open(f'data/vocab.json', 'r') as fin:
+                parsed_json = json.load(fin)
+                self.q2index = parsed_json['question_token_to_idx']
+                self.a2index = parsed_json['answer_token_to_idx']
+            x, y = visual_image_matcher(split, self.q2index, self.a2index)
+            self.x = x
+            self.y = y
+            print("Dataset loaded succesfully!...Saving\n")
+            info = {
+                'split': self.split,
+                'q2index': self.q2index,
+                'a2index': self.a2index,
+                'x': self.x,
+                'y': self.y
+            }
+            with open(f'data/{self.split}_image_dataset.pt', 'wb') as fout:
+                pickle.dump(info, fout)
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        current_image_fn = self.x[idx]['image_filename']
+        question = self.x[idx]['question']
+
+        image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
+        image = self.transform(image)
+        answer = self.y[idx]
+
+        return {'image': image, 'question': question}, answer
 
 # import matplotlib.pyplot as plt
 # with open('../config.yaml', 'r') as fin:

@@ -19,7 +19,10 @@ class RelationalLayer(RelationalLayerBase):
         super().__init__(config=config)
 
         self.quest_inject_position = config["question_injection_position"]
-        self.in_size = 2 * config['hidden_dim']
+        if config['model_architecture'] == 'DeltaRN':
+            self.in_size = 2 * config['hidden_dim']
+        elif config['model_architecture'] == 'DeltaRNFP':
+            self.in_size = 2 * config['visual_hidden_dim']
         self.qst_size = config['max_question_tokens_per_scene']
 
         # create all g layers
@@ -87,3 +90,5 @@ class RelationalLayer(RelationalLayerBase):
         x_f = self.f_fc3(x_f)
 
         return F.log_softmax(x_f, dim=1)
+
+
