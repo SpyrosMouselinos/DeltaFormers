@@ -56,7 +56,7 @@ def load(path: str, model: nn.Module, optim=None, sched=None, bs_sched=None, mod
         bs_sched.load_state_dict(checkpoint['bs_scheduler_state_dict'])
     else:
         print("BS Scheduler not Loaded!\n")
-    print(f"Your model achieves {round(checkpoint['val_loss'], 4)} validation accuracy\n")
+    print(f"Your model achieves {round(checkpoint['val_loss'], 4)} validation loss\n")
     return model, optim, sched, bs_sched, epoch
 
 
@@ -202,7 +202,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
 
                 loss.backward()
                 # Gradient Clipping
-                if config['clip_grad_norm'] != -1:
+
+                if 'clip_grad_norm' not in config or config['clip_grad_norm'] == -1:
+                    pass
+                elif config['clip_grad_norm'] != -1:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), config['clip_grad_norm'])
 
                 optimizer.step()
@@ -230,8 +233,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_rn_fp_cls')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_rn_fp.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default=None)
+    parser.add_argument('--config', type=str, help='The path to the config file', default=None)
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     args = parser.parse_args()
