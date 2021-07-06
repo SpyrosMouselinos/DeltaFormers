@@ -164,8 +164,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
     overfit_count = -3
     log_interval = config['log_every']
     for epoch in range(init_epoch, config['max_epochs']):
+        _print(f"Epoch: {epoch}\n")
         for train_batch_index, train_batch in enumerate(train_dataloader):
             if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0:
+                _print(f"Validating at Epoch: {epoch}\n")
                 total_val_loss = 0.
                 total_val_acc = 0.
                 # Turn off the train mode #
