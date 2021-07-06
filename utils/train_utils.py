@@ -14,6 +14,9 @@ import yaml
 from torch.utils.data import Dataset
 from natsort import natsorted
 
+def _print(something):
+    print(something, flush=True)
+    return
 
 class BatchSizeScheduler:
     def __init__(self, train_ds, initial_bs, step_size, gamma, max_bs):
@@ -307,7 +310,7 @@ class ImageCLEVR(Dataset):
             self.a2index = info['a2index']
             self.x = info['x']
             self.y = info['y']
-            print("Dataset loaded succesfully!\n")
+            _print("Dataset loaded succesfully!\n")
         else:
             self.split = split
             with open(f'data/vocab.json', 'r') as fin:
@@ -317,7 +320,7 @@ class ImageCLEVR(Dataset):
             x, y = visual_image_matcher(split, self.q2index, self.a2index)
             self.x = x
             self.y = y
-            print("Dataset loaded succesfully!...Saving\n")
+            _print("Dataset loaded succesfully!...Saving\n")
             info = {
                 'split': self.split,
                 'q2index': self.q2index,

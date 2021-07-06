@@ -141,10 +141,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
 
         train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], shuffle=True)
-
+        _print(f"Loaded Train Dataset at {len(train_dataloader)} batches of size {config['batch_size']}")
         val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], shuffle=False)
-
+        _print(f"Loaded Validation Dataset at {len(val_dataloader)} batches of size {config['batch_size']}")
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
                                                     gamma=config['scheduler_gamma'])
