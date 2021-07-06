@@ -349,10 +349,8 @@ class ImageCLEVR(Dataset):
             image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
             image = self.transform(image)
             self.cached_images.update({current_image_fn: image})
-            print(f"Read {current_image_fn} from files")
         else:
             image = self.cached_images[current_image_fn]
-            print(f"Took {current_image_fn} from cache")
 
         answer = self.y[idx]
 
