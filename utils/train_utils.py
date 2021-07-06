@@ -345,12 +345,12 @@ class ImageCLEVR(Dataset):
         current_image_fn = self.x[idx]['image_filename']
         question = self.x[idx]['question']
 
-        if current_image_fn not in self.cached_images:
-            image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
-            image = self.transform(image)
-            self.cached_images.update({current_image_fn: image})
-        else:
-            image = self.cached_images[current_image_fn]
+        #if current_image_fn not in self.cached_images:
+        image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
+        image = self.transform(image)
+            #self.cached_images.update({current_image_fn: image})
+        # else:
+        #     image = self.cached_images[current_image_fn]
 
         answer = self.y[idx]
 
