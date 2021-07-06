@@ -13,8 +13,8 @@ from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, BatchSizeScheduler
 
 
-def print(something):
-    sys.stdout.write(something)
+def _print(something):
+    print(something, flush=True)
     return
 
 
@@ -44,25 +44,25 @@ def save_all(model, optim, sched, bs_sched, epoch, loss, path):
 
 
 def load(path: str, model: nn.Module, optim=None, sched=None, bs_sched=None, mode='all'):
-    print("Remember that available modes are: [all, model, model+opt, model+opt+sched]\n")
+    _print("Remember that available modes are: [all, model, model+opt, model+opt+sched]\n")
     checkpoint = torch.load(path)
     epoch = checkpoint['epoch']
     model.load_state_dict(checkpoint['model_state_dict'])
     if ('opt' in mode or 'all' in mode) and optim is not None:
         optim.load_state_dict(checkpoint['optimizer_state_dict'])
     else:
-        print("Optimizer not Loaded!\n")
+        _print("Optimizer not Loaded!\n")
 
     if ('sched' in mode or 'all' in mode) and optim is not None:
         sched.load_state_dict(checkpoint['scheduler_state_dict'])
     else:
-        print("Scheduler not Loaded!\n")
+        _print("Scheduler not Loaded!\n")
 
     if ('bs_sched' in mode or 'all' in mode) and optim is not None:
         bs_sched.load_state_dict(checkpoint['bs_scheduler_state_dict'])
     else:
-        print("BS Scheduler not Loaded!\n")
-    print(f"Your model achieves {round(checkpoint['val_loss'], 4)} validation loss\n")
+        _print("BS Scheduler not Loaded!\n")
+    _print(f"Your model achieves {round(checkpoint['val_loss'], 4)} validation loss\n")
     return model, optim, sched, bs_sched, epoch
 
 
@@ -75,7 +75,7 @@ def kwarg_dict_to_device(data_obj, device):
     return cpy
 
 
-def check_paths(experiment_name):
+def check_paths(config, experiment_name):
     if osp.exists('results'):
         pass
     else:
@@ -86,7 +86,7 @@ def check_paths(experiment_name):
     else:
         os.mkdir(f'results/{experiment_name}')
 
-    copyfile('config_sq.yaml', f'./results/{experiment_name}/config.yaml')
+    copyfile(config, f'./results/{experiment_name}/config.yaml')
     return
 
 
@@ -106,7 +106,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
             config = yaml.load(fin, Loader=yaml.FullLoader)
 
         model = AVAILABLE_MODELS[config['model_architecture']](config)
-        print(f"Loading Model of type: {config['model_architecture']}\n")
+        _print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
         #TODO: Change this!
@@ -130,11 +130,11 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                                                                      mode='all')
 
     else:
-        check_paths(experiment_name)
+        check_paths(config, experiment_name)
         with open(config, 'r') as fin:
             config = yaml.load(fin, Loader=yaml.FullLoader)
         model = AVAILABLE_MODELS[config['model_architecture']](config)
-        print(f"Loading Model of type: {config['model_architecture']}\n")
+        _print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
         # TODO: Change this!
@@ -165,7 +165,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
     log_interval = config['log_every']
     for epoch in range(init_epoch, config['max_epochs']):
         for train_batch_index, train_batch in enumerate(train_dataloader):
-            if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0 and train_batch_index > 0:
+            if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0:
                 total_val_loss = 0.
                 total_val_acc = 0.
                 # Turn off the train mode #
@@ -180,7 +180,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                         val_acc = metric(y_pred, y_real.squeeze(1))
                         total_val_loss += val_loss.item()
                         total_val_acc += val_acc
-                print('| epoch {:3d} | val loss {:5.2f} | val acc {:5.2f} \n'.format(epoch,
+                _print('| epoch {:3d} | val loss {:5.2f} | val acc {:5.2f} \n'.format(epoch,
                                                                                      total_val_loss / (
                                                                                              val_batch_index + 1),
                                                                                      total_val_acc / (
@@ -193,7 +193,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                 else:
                     overfit_count += 1
                     if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
-                        print(f"Training stopped at epoch: {epoch} and best validation loss: {best_val_loss}")
+                        _print(f"Training stopped at epoch: {epoch} and best validation loss: {best_val_loss}")
                 model.train()
             else:
                 # Turn on the train mode #
@@ -221,7 +221,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                 if train_batch_index % log_interval == 0 and train_batch_index > 0:
                     cur_loss = total_loss / (train_batch_index + 1)
                     cur_acc = total_acc / (train_batch_index + 1)
-                    print('| epoch {:3d} | {:5d}/{:5d} batches | '
+                    _print('| epoch {:3d} | {:5d}/{:5d} batches | '
                           'lr {:02.6f} | loss {:5.2f} | acc {:5.2f}\n'.format(epoch, train_batch_index,
                                                                               len(train_dataloader),
                                                                               scheduler.get_last_lr()[0], cur_loss,
@@ -239,8 +239,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_rn_fp')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_rn_fp.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_fp')
+    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_fp.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     args = parser.parse_args()
