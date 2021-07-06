@@ -33,7 +33,7 @@ bs_scheduler_step_size: 10
 scheduler_gamma: 1.8
 bs_scheduler_gamma: 2
 log_every: 100
-validate_every: 5000
+validate_every: 20000
 early_stopping: 10
 
 
@@ -42,3 +42,4 @@ question_injection_position: 0
 f_fc1: 256
 f_fc2: 256
 rl_dropout: 0.3
+n_workers: 0

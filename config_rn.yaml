@@ -40,3 +40,4 @@ question_injection_position: 0
 f_fc1: 512
 f_fc2: 1024
 rl_dropout: 0.5
+n_workers: 0

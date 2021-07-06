@@ -109,7 +109,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         _print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
-        #TODO: Change this!
+        # TODO: Change this!
         train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
 
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], shuffle=True)
@@ -140,10 +140,12 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         # TODO: Change this!
 
         train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
-        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], shuffle=True)
+        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
+                                                       num_workers=config['n_workers'], shuffle=True)
         _print(f"Loaded Train Dataset at {len(train_dataloader)} batches of size {config['batch_size']}")
         val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
-        val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], shuffle=False)
+        val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
+                                                     num_workers=config['n_workers'], shuffle=False)
         _print(f"Loaded Validation Dataset at {len(val_dataloader)} batches of size {config['batch_size']}")
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
@@ -166,7 +168,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
     for epoch in range(init_epoch, config['max_epochs']):
         _print(f"Epoch: {epoch}\n")
         for train_batch_index, train_batch in enumerate(train_dataloader):
-            if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0:
+            if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0 and (train_batch_index > 0):
                 _print(f"Validating at Epoch: {epoch}\n")
                 total_val_loss = 0.
                 total_val_acc = 0.
@@ -183,10 +185,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                         total_val_loss += val_loss.item()
                         total_val_acc += val_acc
                 _print('| epoch {:3d} | val loss {:5.2f} | val acc {:5.2f} \n'.format(epoch,
-                                                                                     total_val_loss / (
-                                                                                             val_batch_index + 1),
-                                                                                     total_val_acc / (
-                                                                                             val_batch_index + 1)))
+                                                                                      total_val_loss / (
+                                                                                              val_batch_index + 1),
+                                                                                      total_val_acc / (
+                                                                                              val_batch_index + 1)))
                 if total_val_loss / (val_batch_index + 1) < best_val_loss:
                     best_val_loss = total_val_loss / (val_batch_index + 1)
                     save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
@@ -224,10 +226,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
                     cur_loss = total_loss / (train_batch_index + 1)
                     cur_acc = total_acc / (train_batch_index + 1)
                     _print('| epoch {:3d} | {:5d}/{:5d} batches | '
-                          'lr {:02.6f} | loss {:5.2f} | acc {:5.2f}\n'.format(epoch, train_batch_index,
-                                                                              len(train_dataloader),
-                                                                              scheduler.get_last_lr()[0], cur_loss,
-                                                                              cur_acc))
+                           'lr {:02.6f} | loss {:5.2f} | acc {:5.2f}\n'.format(epoch, train_batch_index,
+                                                                               len(train_dataloader),
+                                                                               scheduler.get_last_lr()[0], cur_loss,
+                                                                               cur_acc))
             # End of batch #
         # End of epoch #
         total_loss = 0.

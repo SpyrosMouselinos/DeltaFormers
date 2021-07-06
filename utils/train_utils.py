@@ -14,9 +14,11 @@ import yaml
 from torch.utils.data import Dataset
 from natsort import natsorted
 
+
 def _print(something):
     print(something, flush=True)
     return
+
 
 class BatchSizeScheduler:
     def __init__(self, train_ds, initial_bs, step_size, gamma, max_bs):
@@ -331,6 +333,8 @@ class ImageCLEVR(Dataset):
             with open(f'data/{self.split}_image_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
 
+        self.cached_images = {}
+
     def __len__(self):
         return len(self.x)
 
@@ -341,8 +345,15 @@ class ImageCLEVR(Dataset):
         current_image_fn = self.x[idx]['image_filename']
         question = self.x[idx]['question']
 
-        image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
-        image = self.transform(image)
+        if current_image_fn not in self.cached_images:
+            image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
+            image = self.transform(image)
+            self.cached_images.update({current_image_fn: image})
+            print(f"Read {current_image_fn} from files")
+        else:
+            image = self.cached_images[current_image_fn]
+            print(f"Took {current_image_fn} from cache")
+
         answer = self.y[idx]
 
         return {'image': image, 'question': question}, answer
