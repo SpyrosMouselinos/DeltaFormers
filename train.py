@@ -12,6 +12,12 @@ from torch.utils.data import Dataset
 from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, BatchSizeScheduler
 
+
+def print(something):
+    sys.stdout.write(something)
+    return
+
+
 AVAILABLE_DATASETS = {
     'DeltaRN': StateCLEVR,
     'DeltaSQFormer': StateCLEVR,
@@ -100,7 +106,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
             config = yaml.load(fin, Loader=yaml.FullLoader)
 
         model = AVAILABLE_MODELS[config['model_architecture']](config)
-        print(f"Loading Model of type: {config['model_architecture']}\n", flush=True)
+        print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
         #TODO: Change this!
@@ -128,7 +134,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         with open(config, 'r') as fin:
             config = yaml.load(fin, Loader=yaml.FullLoader)
         model = AVAILABLE_MODELS[config['model_architecture']](config)
-        print(f"Loading Model of type: {config['model_architecture']}\n", flush=True)
+        print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
         # TODO: Change this!

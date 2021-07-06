@@ -32,8 +32,8 @@ scheduler_step_size: 10
 bs_scheduler_step_size: 10
 scheduler_gamma: 1.8
 bs_scheduler_gamma: 2
-log_every: 500
-validate_every: 20000
+log_every: 100
+validate_every: 5000
 early_stopping: 10
 
 

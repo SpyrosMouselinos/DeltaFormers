@@ -157,7 +157,6 @@ def scene_image_matcher(split, translation, q2index, a2index):
 
     x_samples = []
     y_samples = []
-    scene_counter = 0
     question_counter = 0
     for scene_counter in trange(len(scenes)):
         image_index_scene, n_objects, object_positions, object_colors, object_shapes, object_materials, object_sizes = \
