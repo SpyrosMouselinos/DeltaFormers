@@ -62,25 +62,25 @@ class BatchSizeScheduler:
         self._current_steps = state_dict['current_steps']
 
 
-def image_finder(mode='val'):
+def image_finder(clvr_path='data/', mode='val'):
     ### Discover and return all available images ###
     good_images = []
-    available = os.listdir(f'data/images/{mode}')
+    available = os.listdir(clvr_path + f'/images/{mode}')
     for candidate in available:
         if mode in candidate and candidate.endswith('.png'):
             good_images.append(candidate)
     return natsorted(good_images)
 
 
-def scene_parser(mode='val'):
-    with open(f'data/CLEVR_{mode}_scenes.json', 'r') as fin:
+def scene_parser(scenes_path='data/', mode='val'):
+    with open(scenes_path + f'/CLEVR_{mode}_scenes.json', 'r') as fin:
         parsed_json = json.load(fin)
         scenes = parsed_json['scenes']
     return scenes
 
 
-def question_parser(mode='val'):
-    with open(f'data/CLEVR_{mode}_questions.json', 'r') as fin:
+def question_parser(questions_path='data/',mode='val'):
+    with open(questions_path + f'/CLEVR_{mode}_questions.json', 'r') as fin:
         parsed_json = json.load(fin)
         questions = parsed_json['questions']
     return questions
@@ -153,12 +153,12 @@ def single_question_parser(question: dict, word_replace_dict: dict, q2index: dic
     return image_index, len(tokenized_q), q, a
 
 
-def scene_image_matcher(split, translation, q2index, a2index):
+def scene_image_matcher(split, translation, q2index, a2index, scenes_path='data/', questions_path='data/'):
     ### All scenes ###
-    scenes = scene_parser(split)
+    scenes = scene_parser(scenes_path, split)
 
     ### All questions ###
-    questions = question_parser(split)
+    questions = question_parser(questions_path, split)
 
     x_samples = []
     y_samples = []
@@ -200,12 +200,12 @@ def scene_image_matcher(split, translation, q2index, a2index):
     return x_samples, y_samples
 
 
-def visual_image_matcher(split, q2index, a2index):
+def visual_image_matcher(split, q2index, a2index, clvr_path='data/', questions_path='data/'):
     ### All images ###
-    images = image_finder(split)
+    images = image_finder(clvr_path, split)
 
     ### All questions ###
-    questions = question_parser(split)
+    questions = question_parser(questions_path, split)
 
     x_samples = []
     y_samples = []
@@ -243,7 +243,7 @@ def visual_image_matcher(split, q2index, a2index):
 class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
-    def __init__(self, config=None, split='val'):
+    def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None, use_cache=False):
         if osp.exists(f'data/{split}_dataset.pt'):
             with open(f'data/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
@@ -267,7 +267,7 @@ class StateCLEVR(Dataset):
             self.translation = translation
             self.q2index = q2index
             self.a2index = a2index
-            x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index)
+            x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index, scenes_path, questions_path)
             self.x = x
             self.y = y
             print("Dataset loaded succesfully!...Saving\n")
@@ -294,7 +294,9 @@ class StateCLEVR(Dataset):
 class ImageCLEVR(Dataset):
     """CLEVR dataset made from Images."""
 
-    def __init__(self, config=None, split='val'):
+    def __init__(self, config=None, split='val', use_cache=False, clvr_path='data/', questions_path='data/', scenes_path=None):
+        self.use_cache = use_cache
+        self.clvr_path = clvr_path
         if split == 'train':
             self.transform = transforms.Compose([transforms.Resize((128, 128)),
                                                  transforms.Pad(8),
@@ -319,7 +321,7 @@ class ImageCLEVR(Dataset):
                 parsed_json = json.load(fin)
                 self.q2index = parsed_json['question_token_to_idx']
                 self.a2index = parsed_json['answer_token_to_idx']
-            x, y = visual_image_matcher(split, self.q2index, self.a2index)
+            x, y = visual_image_matcher(split, self.q2index, self.a2index, clvr_path, questions_path)
             self.x = x
             self.y = y
             _print("Dataset loaded succesfully!...Saving\n")
@@ -344,13 +346,16 @@ class ImageCLEVR(Dataset):
 
         current_image_fn = self.x[idx]['image_filename']
         question = self.x[idx]['question']
-
-        #if current_image_fn not in self.cached_images:
-        image = Image.open(f'data/images/{self.split}/{current_image_fn}').convert('RGB')
-        image = self.transform(image)
-            #self.cached_images.update({current_image_fn: image})
-        # else:
-        #     image = self.cached_images[current_image_fn]
+        if self.use_cache:
+            if current_image_fn not in self.cached_images:
+                image = Image.open(self.clvr_path + f'/images/{self.split}/{current_image_fn}').convert('RGB')
+                image = self.transform(image)
+                self.cached_images.update({current_image_fn: image})
+            else:
+                image = self.cached_images[current_image_fn]
+        else:
+            image = Image.open(self.clvr_path + f'/images/{self.split}/{current_image_fn}').convert('RGB')
+            image = self.transform(image)
 
         answer = self.y[idx]
 

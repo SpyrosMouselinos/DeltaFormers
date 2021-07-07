@@ -95,7 +95,8 @@ def accuracy_metric(y_pred, y_true):
     return float(100 * acc.sum() / len(acc))
 
 
-def train_model(config, device, experiment_name='experiment_1', load_from=None):
+def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
+                questions_path='data/', scenes_path='data/', use_cache=False):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -110,13 +111,19 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         model = model.to(device)
         model.train()
         # TODO: Change this!
-        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
+        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train', clvr_path=clvr_path,
+                                                                     questions_path=questions_path,
+                                                                     scenes_path=scenes_path, use_cache=use_cache)
 
-        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], num_workers=config['n_workers'], shuffle=True)
+        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
+                                                       num_workers=config['n_workers'], shuffle=True)
 
-        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
+        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val', clvr_path=clvr_path,
+                                                                   questions_path=questions_path,
+                                                                   scenes_path=scenes_path, use_cache=use_cache)
 
-        val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], num_workers=config['n_workers'], shuffle=False)
+        val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
+                                                     num_workers=config['n_workers'], shuffle=False)
 
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
@@ -139,11 +146,15 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         model.train()
         # TODO: Change this!
 
-        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
+        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train', clvr_path=clvr_path,
+                                                                     questions_path=questions_path,
+                                                                     scenes_path=scenes_path, use_cache=use_cache)
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
                                                        num_workers=config['n_workers'], shuffle=True)
         _print(f"Loaded Train Dataset at {len(train_dataloader)} batches of size {config['batch_size']}")
-        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
+        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val', clvr_path=clvr_path,
+                                                                   questions_path=questions_path,
+                                                                   scenes_path=scenes_path, use_cache=use_cache)
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
                                                      num_workers=config['n_workers'], shuffle=False)
         _print(f"Loaded Validation Dataset at {len(val_dataloader)} batches of size {config['batch_size']}")
@@ -247,5 +258,12 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=str, help='The path to the config file', default='./config_fp.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
+    parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
+    parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
+    parser.add_argument('--clvr_path', type=str, help='folder before images', default='C:\\Users\\Guldan\\Desktop')
+    parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     args = parser.parse_args()
-    train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from)
+    args.use_cache = True
+    if args.use_cache == 0:
+        args.use_cache = False
+    train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from, scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path, use_cache=args.use_cache)
