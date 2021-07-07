@@ -96,7 +96,7 @@ def accuracy_metric(y_pred, y_true):
 
 
 def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
-                questions_path='data/', scenes_path='data/', use_cache=False):
+                questions_path='data/', scenes_path='data/', use_cache=False, run_on_colab=False):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -202,8 +202,13 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                                               val_batch_index + 1)))
                 if total_val_loss / (val_batch_index + 1) < best_val_loss:
                     best_val_loss = total_val_loss / (val_batch_index + 1)
-                    save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
-                             f'./results/{experiment_name}')
+                    if run_on_colab:
+                        save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
+                                 f'/content/gdrive/MyDrive/relation_results/{experiment_name}')
+                    else:
+                        save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
+                                 f'./results/{experiment_name}')
+
                     overfit_count = -1
                 else:
                     overfit_count += 1
@@ -260,10 +265,14 @@ if __name__ == '__main__':
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
-    parser.add_argument('--clvr_path', type=str, help='folder before images', default='C:\\Users\\Guldan\\Desktop')
+    parser.add_argument('--clvr_path', type=str, help='folder before images', default=None)
+    parser.add_argument('--run_on_colab', type=str, help='if it runs on a google colab', default=0)
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     args = parser.parse_args()
+    args.run_on_colab = True
     args.use_cache = True
     if args.use_cache == 0:
         args.use_cache = False
-    train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from, scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path, use_cache=args.use_cache)
+    if args.run_on_colab == 0:
+        args.run_on_colab = False
+    train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from, scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path, use_cache=args.use_cache, run_on_colab=args.run_on_colab)
