@@ -112,11 +112,11 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None):
         # TODO: Change this!
         train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train')
 
-        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], shuffle=True)
+        train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'], num_workers=config['n_workers'], shuffle=True)
 
         val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val')
 
-        val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], shuffle=False)
+        val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'], num_workers=config['n_workers'], shuffle=False)
 
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
