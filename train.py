@@ -140,11 +140,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         check_paths(config, experiment_name)
         with open(config, 'r') as fin:
             config = yaml.load(fin, Loader=yaml.FullLoader)
-        model = AVAILABLE_MODELS[config['model_architecture']](config)
-        _print(f"Loading Model of type: {config['model_architecture']}\n")
-        model = model.to(device)
-        model.train()
-        # TODO: Change this!
+
 
         train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train', clvr_path=clvr_path,
                                                                      questions_path=questions_path,
@@ -158,6 +154,11 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
                                                      num_workers=config['n_workers'], shuffle=False)
         _print(f"Loaded Validation Dataset at {len(val_dataloader)} batches of size {config['batch_size']}")
+        model = AVAILABLE_MODELS[config['model_architecture']](config)
+        _print(f"Loading Model of type: {config['model_architecture']}\n")
+        model = model.to(device)
+        model.train()
+        # TODO: Change this!
         optimizer = torch.optim.Adam(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
                                                     gamma=config['scheduler_gamma'])
