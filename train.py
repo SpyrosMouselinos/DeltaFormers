@@ -245,7 +245,9 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                     overfit_count += 1
                     if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
                         _print(f"Training stopped at epoch: {epoch} and best validation loss: {best_val_loss}")
+                        return
                 model.train()
+
             else:
                 # Turn on the train mode #
                 data, y_real = train_batch
