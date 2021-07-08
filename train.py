@@ -96,7 +96,7 @@ def accuracy_metric(y_pred, y_true):
 
 
 def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
-                questions_path='data/', scenes_path='data/', use_cache=False, run_on_colab=False, use_hdf5=False):
+                questions_path='data/', scenes_path='data/', use_cache=False, use_hdf5=False):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -200,7 +200,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         _print(f"Epoch: {epoch}\n")
         for train_batch_index, train_batch in enumerate(train_dataloader):
             if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0 and (train_batch_index > 0):
-                _print(f"Validating at Epoch: {epoch}\n")
+                _print(f"Validating at Epoch: {epoch} and Train Batch Index {train_batch_index} and Total {((epoch + 1) * train_batch_index)}\n")
                 total_val_loss = 0.
                 total_val_acc = 0.
                 # Turn off the train mode #
@@ -222,12 +222,9 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                                               val_batch_index + 1)))
                 if total_val_loss / (val_batch_index + 1) < best_val_loss:
                     best_val_loss = total_val_loss / (val_batch_index + 1)
-                    if run_on_colab:
-                        save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
-                                 f'/content/gdrive/MyDrive/relation_results/{experiment_name}')
-                    else:
-                        save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
-                                 f'./results/{experiment_name}')
+
+                    save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
+                             f'./results/{experiment_name}')
 
                     overfit_count = -1
                 else:

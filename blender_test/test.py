@@ -1,6 +1,5 @@
 import json
 import os.path as osp
-import random
 import sys
 
 import yaml
@@ -166,7 +165,7 @@ def encode_questions_and_scenes(question, q2index, a2index, scene, translation, 
              }
         y = a
     else:
-        #print(f"Image index {image_index_scene} and question index {image_index_question} do not match!\n")
+        # print(f"Image index {image_index_scene} and question index {image_index_question} do not match!\n")
         return 1, 1
 
     return x, y
@@ -177,9 +176,9 @@ def fp(model, x, y, device):
         x = kwarg_dict_to_device(x, device=device)
         y = y.to(device)
         model = model.to(device)
-        y_pred = model(**x)[0]
+        y_pred, att_maps, _ = model(**x)
     acc = (y_pred.argmax(1) == y).float().detach().cpu().numpy()
-    return acc
+    return acc[0], att_maps
 
 
 # if __name__ == '__main__':
@@ -192,25 +191,24 @@ def fp(model, x, y, device):
 #
 #     translation, q2index, a2index = load_encoders()
 #
-#     with open(f'../data/CLEVR_train_scenes.json', 'r') as fin:
+#     with open(f'../data/CLEVR_val_scenes.json', 'r') as fin:
 #         parsed_json = json.load(fin)
-#         scenes = parsed_json['scenes']
+#         scenes = parsed_json['scenes'][0:10]
 #
-#     with open(f'../data/CLEVR_train_questions.json', 'r') as fin:
+#     with open(f'../data/CLEVR_val_questions.json', 'r') as fin:
 #         parsed_json = json.load(fin)
-#         questions = parsed_json['questions']
-#
-#     import numpy as np
-#     performances = np.array([0,0,0,0])
+#         questions = parsed_json['questions'][0:100]
 #
 #     acc = 0
 #     eligible = 0
 #     question_counter = 0
 #     scene_counter = 0
+#     print(model)
 #     # Experiment 1
-#     while scene_counter < 5000:
+#     while scene_counter < 10:
 #         scene = scenes[scene_counter]
 #         question = questions[question_counter]
+#         question_tokens = ['<START>'] + [f for f in question['question'].split(' ')] + ['<END>']
 #         x, y = encode_questions_and_scenes(question, q2index, a2index, scene, translation)
 #         if x == 0 and y == 0:
 #             question_counter += 1
@@ -220,34 +218,9 @@ def fp(model, x, y, device):
 #             continue
 #         else:
 #             eligible += 1
-#             acc += fp(model, x, y, device=args.device)[0]
+#             acc_, att_maps = fp(model, x, y, device=args.device)
+#             acc += acc_
 #             question_counter += 1
 #     print("Original Performance\n")
 #     print(acc / eligible)
-#     performances[0] = acc / eligible
-#     print('\n')
-#
-#
-#     acc = 0
-#     eligible = 0
-#     question_counter = 0
-#     scene_counter = 5000
-#     # Experiment 1
-#     while scene_counter < 10_000:
-#         scene = scenes[scene_counter]
-#         question = questions[question_counter]
-#         x, y = encode_questions_and_scenes(question, q2index, a2index, scene, translation)
-#         if x == 0 and y == 0:
-#             question_counter += 1
-#             continue
-#         elif x == 1 and y == 1:
-#             scene_counter += 1
-#             continue
-#         else:
-#             eligible += 1
-#             acc += fp(model, x, y, device=args.device)[0]
-#             question_counter += 1
-#     print("Original Performance\n")
-#     print(acc / eligible)
-#     performances[1] = acc / eligible
 #     print('\n')

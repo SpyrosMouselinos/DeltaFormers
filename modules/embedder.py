@@ -430,7 +430,7 @@ class DeltaSQFormer(Module):
         answer = self.classhead(item_output)
 
         # answer = self.avghead(out[-1])
-        return answer, atts[-1], None
+        return answer, atts, None
 
 
 class DeltaQFormer(Module):
