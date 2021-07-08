@@ -22,7 +22,7 @@ AVAILABLE_DATASETS = {
     'DeltaRN': [StateCLEVR],
     'DeltaSQFormer': [StateCLEVR],
     'DeltaQFormer': [StateCLEVR],
-    'DeltaRNFP': [ImageCLEVR,ImageCLEVR_HDF5],
+    'DeltaRNFP': [ImageCLEVR, ImageCLEVR_HDF5],
 }
 
 AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
@@ -112,24 +112,30 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         model.train()
         # TODO: Change this!
         if use_hdf5:
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train', clvr_path=clvr_path,
-                                                                         questions_path=questions_path,
-                                                                         scenes_path=scenes_path, use_cache=use_cache)
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train',
+                                                                            clvr_path=clvr_path,
+                                                                            questions_path=questions_path,
+                                                                            scenes_path=scenes_path,
+                                                                            use_cache=use_cache)
         else:
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train', clvr_path=clvr_path,
-                                                                         questions_path=questions_path,
-                                                                         scenes_path=scenes_path, use_cache=use_cache)
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
+                                                                            clvr_path=clvr_path,
+                                                                            questions_path=questions_path,
+                                                                            scenes_path=scenes_path,
+                                                                            use_cache=use_cache)
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
                                                        num_workers=config['n_workers'], shuffle=True)
 
         if use_hdf5:
-            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val', clvr_path=clvr_path,
-                                                                       questions_path=questions_path,
-                                                                       scenes_path=scenes_path, use_cache=use_cache)
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val',
+                                                                          clvr_path=clvr_path,
+                                                                          questions_path=questions_path,
+                                                                          scenes_path=scenes_path, use_cache=use_cache)
         else:
-            val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val', clvr_path=clvr_path,
-                                                                       questions_path=questions_path,
-                                                                       scenes_path=scenes_path, use_cache=use_cache)
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
+                                                                          clvr_path=clvr_path,
+                                                                          questions_path=questions_path,
+                                                                          scenes_path=scenes_path, use_cache=use_cache)
 
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
                                                      num_workers=config['n_workers'], shuffle=False)
@@ -151,25 +157,31 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
             config = yaml.load(fin, Loader=yaml.FullLoader)
 
         if use_hdf5:
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train', clvr_path=clvr_path,
-                                                                         questions_path=questions_path,
-                                                                         scenes_path=scenes_path, use_cache=use_cache)
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train',
+                                                                            clvr_path=clvr_path,
+                                                                            questions_path=questions_path,
+                                                                            scenes_path=scenes_path,
+                                                                            use_cache=use_cache)
         else:
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train', clvr_path=clvr_path,
-                                                                         questions_path=questions_path,
-                                                                         scenes_path=scenes_path, use_cache=use_cache)
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
+                                                                            clvr_path=clvr_path,
+                                                                            questions_path=questions_path,
+                                                                            scenes_path=scenes_path,
+                                                                            use_cache=use_cache)
 
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
                                                        num_workers=config['n_workers'], shuffle=True)
         _print(f"Loaded Train Dataset at {len(train_dataloader)} batches of size {config['batch_size']}")
         if use_hdf5:
-            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val', clvr_path=clvr_path,
-                                                                       questions_path=questions_path,
-                                                                       scenes_path=scenes_path, use_cache=use_cache)
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val',
+                                                                          clvr_path=clvr_path,
+                                                                          questions_path=questions_path,
+                                                                          scenes_path=scenes_path, use_cache=use_cache)
         else:
-            val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val', clvr_path=clvr_path,
-                                                                       questions_path=questions_path,
-                                                                       scenes_path=scenes_path, use_cache=use_cache)
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
+                                                                          clvr_path=clvr_path,
+                                                                          questions_path=questions_path,
+                                                                          scenes_path=scenes_path, use_cache=use_cache)
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
                                                      num_workers=config['n_workers'], shuffle=False)
         _print(f"Loaded Validation Dataset at {len(val_dataloader)} batches of size {config['batch_size']}")
@@ -196,11 +208,13 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     best_val_loss = 1000
     overfit_count = -3
     log_interval = config['log_every']
+    running_train_batch_index = 0
     for epoch in range(init_epoch, config['max_epochs']):
         _print(f"Epoch: {epoch}\n")
         for train_batch_index, train_batch in enumerate(train_dataloader):
-            if ((epoch + 1) * train_batch_index) % config['validate_every'] == 0 and (train_batch_index > 0):
-                _print(f"Validating at Epoch: {epoch} and Train Batch Index {train_batch_index} and Total {((epoch + 1) * train_batch_index)}\n")
+            if running_train_batch_index % config['validate_every'] == 0 and running_train_batch_index > 0:
+                _print(
+                    f"Validating at Epoch: {epoch} and Total Batch Index {running_train_batch_index}\n")
                 total_val_loss = 0.
                 total_val_acc = 0.
                 # Turn off the train mode #
@@ -264,6 +278,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                                scheduler.get_last_lr()[0], cur_loss,
                                                                                cur_acc))
             # End of batch #
+            running_train_batch_index += 1
         # End of epoch #
         total_loss = 0.
         total_acc = 0.
@@ -298,4 +313,4 @@ if __name__ == '__main__':
 
     train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                 scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
-                use_cache=args.use_cache,  use_hdf5=args.use_hdf5)
+                use_cache=args.use_cache, use_hdf5=args.use_hdf5)
