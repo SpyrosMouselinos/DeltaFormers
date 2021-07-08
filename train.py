@@ -283,19 +283,19 @@ if __name__ == '__main__':
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
-    parser.add_argument('--run_on_colab', type=str, help='if it runs on a google colab', default=0)
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     args = parser.parse_args()
+
     args.use_hdf5 = True
-    args.run_on_colab = True
     args.use_cache = True
+
     if args.use_cache == 0:
         args.use_cache = False
-    if args.run_on_colab == 0:
-        args.run_on_colab = False
+
     if args.use_hdf5 == 0:
         args.use_hdf5 = False
+
     train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                 scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
-                use_cache=args.use_cache, run_on_colab=args.run_on_colab, use_hdf5=args.use_hdf5)
+                use_cache=args.use_cache,  use_hdf5=args.use_hdf5)
