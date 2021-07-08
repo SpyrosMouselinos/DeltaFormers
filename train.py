@@ -10,7 +10,7 @@ sys.path.insert(0, osp.abspath('.'))
 import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
-from utils.train_utils import StateCLEVR, ImageCLEVR, BatchSizeScheduler
+from utils.train_utils import StateCLEVR, ImageCLEVR_HDF5, BatchSizeScheduler
 
 
 def _print(something):
@@ -22,7 +22,7 @@ AVAILABLE_DATASETS = {
     'DeltaRN': StateCLEVR,
     'DeltaSQFormer': StateCLEVR,
     'DeltaQFormer': StateCLEVR,
-    'DeltaRNFP': ImageCLEVR,
+    'DeltaRNFP': ImageCLEVR_HDF5,
 }
 
 AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
@@ -140,7 +140,6 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         check_paths(config, experiment_name)
         with open(config, 'r') as fin:
             config = yaml.load(fin, Loader=yaml.FullLoader)
-
 
         train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train', clvr_path=clvr_path,
                                                                      questions_path=questions_path,
@@ -266,7 +265,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
-    parser.add_argument('--clvr_path', type=str, help='folder before images', default=None)
+    parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--run_on_colab', type=str, help='if it runs on a google colab', default=0)
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     args = parser.parse_args()
@@ -276,4 +275,6 @@ if __name__ == '__main__':
         args.use_cache = False
     if args.run_on_colab == 0:
         args.run_on_colab = False
-    train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from, scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path, use_cache=args.use_cache, run_on_colab=args.run_on_colab)
+    train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
+                scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
+                use_cache=args.use_cache, run_on_colab=args.run_on_colab)

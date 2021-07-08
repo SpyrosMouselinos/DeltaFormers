@@ -4,10 +4,12 @@ import os.path as osp
 import pickle
 import sys
 
+import matplotlib.pyplot as plt
 from PIL import Image
 from torchvision import transforms
 from tqdm import trange
-
+import numpy as np
+import h5py
 sys.path.insert(0, osp.abspath('..'))
 import torch
 import yaml
@@ -79,7 +81,7 @@ def scene_parser(scenes_path='data/', mode='val'):
     return scenes
 
 
-def question_parser(questions_path='data/',mode='val'):
+def question_parser(questions_path='data/', mode='val'):
     with open(questions_path + f'/CLEVR_{mode}_questions.json', 'r') as fin:
         parsed_json = json.load(fin)
         questions = parsed_json['questions']
@@ -243,7 +245,8 @@ def visual_image_matcher(split, q2index, a2index, clvr_path='data/', questions_p
 class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
-    def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None, use_cache=False):
+    def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None,
+                 use_cache=False):
         if osp.exists(f'data/{split}_dataset.pt'):
             with open(f'data/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
@@ -267,7 +270,8 @@ class StateCLEVR(Dataset):
             self.translation = translation
             self.q2index = q2index
             self.a2index = a2index
-            x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index, scenes_path, questions_path)
+            x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index, scenes_path,
+                                       questions_path)
             self.x = x
             self.y = y
             print("Dataset loaded succesfully!...Saving\n")
@@ -294,7 +298,8 @@ class StateCLEVR(Dataset):
 class ImageCLEVR(Dataset):
     """CLEVR dataset made from Images."""
 
-    def __init__(self, config=None, split='val', use_cache=False, clvr_path='data/', questions_path='data/', scenes_path=None):
+    def __init__(self, config=None, split='val', use_cache=False, clvr_path='data/', questions_path='data/',
+                 scenes_path=None):
         self.use_cache = use_cache
         self.clvr_path = clvr_path
         if split == 'train':
@@ -360,6 +365,92 @@ class ImageCLEVR(Dataset):
         answer = self.y[idx]
 
         return {'image': image, 'question': question}, answer
+
+
+class ImageCLEVR_HDF5(Dataset):
+    """CLEVR dataset made from Images in HDF5 format."""
+
+    def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
+                 scenes_path=None, use_cache=False):
+
+        self.clvr_path = clvr_path
+        if split == 'train':
+            self.transform = transforms.Compose([transforms.Pad(8),
+                                                 transforms.RandomCrop((128, 128)),
+                                                 transforms.RandomRotation(2.8),  # .05 rad
+                                                 transforms.ToTensor()])
+        else:
+            self.transform = transforms.Compose([transforms.ToTensor()])
+        if osp.exists(f'data/{split}_image_dataset.pt'):
+            with open(f'data/{split}_image_dataset.pt', 'rb')as fin:
+                info = pickle.load(fin)
+            self.split = info['split']
+            self.q2index = info['q2index']
+            self.a2index = info['a2index']
+            self.x = info['x']
+            self.y = info['y']
+            _print("Dataset loaded succesfully!\n")
+        else:
+            self.split = split
+            with open(f'data/vocab.json', 'r') as fin:
+                parsed_json = json.load(fin)
+                self.q2index = parsed_json['question_token_to_idx']
+                self.a2index = parsed_json['answer_token_to_idx']
+            x, y = visual_image_matcher(split, self.q2index, self.a2index, clvr_path, questions_path)
+            self.x = x
+            self.y = y
+            _print("Dataset matched succesfully!\n")
+            info = {
+                'split': self.split,
+                'q2index': self.q2index,
+                'a2index': self.a2index,
+                'x': self.x,
+                'y': self.y
+            }
+            with open(f'data/{self.split}_image_dataset.pt', 'wb') as fout:
+                pickle.dump(info, fout)
+        if osp.exists(f'data/{split}_images.h5'):
+            self.hdf5_file = h5py.File(f'data/{split}_images.h5', 'r')
+            self.n_images = self.hdf5_file['image'].shape[0]
+            _print("Image HDF5 loaded succesfully!\n")
+        else:
+            available_images = natsorted(os.listdir(self.clvr_path + f'/images/{self.split}/'))
+            image_train_shape = (len(available_images), 128, 128, 3)
+
+            f = h5py.File(f'data/{split}_images.h5', mode='w')
+            f.create_dataset("image", image_train_shape, h5py.h5t.STD_U8BE)
+
+            for i, img_addr in enumerate(available_images):
+                image = Image.open(self.clvr_path + f'/images/{split}/{img_addr}').convert('RGB').resize((128, 128), 3)
+                f["image"][i] = image
+            f.close()
+            _print("Image HDF5 written succesfully!\n")
+            self.hdf5_file = h5py.File(f'data/{split}_images.h5', 'r')
+            self.n_images = self.hdf5_file['image'].shape[0]
+            _print("Image HDF5 loaded succesfully!\n")
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        question = self.x[idx]['question']
+        current_image_fn = self.x[idx]['image_filename']
+        current_image_index = int(current_image_fn.split('.png')[0].split(f'{self.split}_')[-1])
+        image_data = Image.fromarray(np.array(self.hdf5_file['image'][current_image_index]).astype("uint8"), 'RGB')
+        image = self.transform(image_data)
+        answer = self.y[idx]
+
+        return {'image': image, 'question': question}, answer
+
+
+
+
+
+
+
+
 
 # import matplotlib.pyplot as plt
 # with open('../config.yaml', 'r') as fin:
