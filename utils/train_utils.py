@@ -46,7 +46,6 @@ class BatchSizeScheduler:
 
     def state_dict(self):
         info = {
-            'train_ds': self.train_ds,
             'current_bs': self.current_bs,
             'max_bs': self.max_bs,
             'step_size': self.step_size,
@@ -56,7 +55,6 @@ class BatchSizeScheduler:
         return info
 
     def load_state_dict(self, state_dict):
-        self.train_ds = state_dict['train_ds']
         self.current_bs = state_dict['current_bs']
         self.max_bs = state_dict['max_bs']
         self.step_size = state_dict['step_size']
