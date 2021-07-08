@@ -23,7 +23,7 @@ num_questions_per_image: 10
 
 
 max_epochs: 200
-batch_size: 2
+batch_size: 64
 lr: 0.00005
 clip_grad_norm: 10
 max_lr: 0.0006
@@ -32,8 +32,8 @@ scheduler_step_size: 10
 bs_scheduler_step_size: 10
 scheduler_gamma: 1.8
 bs_scheduler_gamma: 2
-log_every: 1
-validate_every: 10
+log_every: 100
+validate_every: 20000
 early_stopping: 10
 
 
