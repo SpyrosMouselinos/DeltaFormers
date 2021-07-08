@@ -10,7 +10,7 @@ sys.path.insert(0, osp.abspath('.'))
 import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
-from utils.train_utils import StateCLEVR, ImageCLEVR_HDF5, BatchSizeScheduler
+from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5, BatchSizeScheduler
 
 
 def _print(something):
@@ -19,10 +19,10 @@ def _print(something):
 
 
 AVAILABLE_DATASETS = {
-    'DeltaRN': StateCLEVR,
-    'DeltaSQFormer': StateCLEVR,
-    'DeltaQFormer': StateCLEVR,
-    'DeltaRNFP': ImageCLEVR_HDF5,
+    'DeltaRN': [StateCLEVR],
+    'DeltaSQFormer': [StateCLEVR],
+    'DeltaQFormer': [StateCLEVR],
+    'DeltaRNFP': [ImageCLEVR,ImageCLEVR_HDF5],
 }
 
 AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
@@ -96,7 +96,7 @@ def accuracy_metric(y_pred, y_true):
 
 
 def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
-                questions_path='data/', scenes_path='data/', use_cache=False, run_on_colab=False):
+                questions_path='data/', scenes_path='data/', use_cache=False, run_on_colab=False, use_hdf5=False):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -111,16 +111,25 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         model = model.to(device)
         model.train()
         # TODO: Change this!
-        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train', clvr_path=clvr_path,
-                                                                     questions_path=questions_path,
-                                                                     scenes_path=scenes_path, use_cache=use_cache)
-
+        if use_hdf5:
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train', clvr_path=clvr_path,
+                                                                         questions_path=questions_path,
+                                                                         scenes_path=scenes_path, use_cache=use_cache)
+        else:
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train', clvr_path=clvr_path,
+                                                                         questions_path=questions_path,
+                                                                         scenes_path=scenes_path, use_cache=use_cache)
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
                                                        num_workers=config['n_workers'], shuffle=True)
 
-        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val', clvr_path=clvr_path,
-                                                                   questions_path=questions_path,
-                                                                   scenes_path=scenes_path, use_cache=use_cache)
+        if use_hdf5:
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val', clvr_path=clvr_path,
+                                                                       questions_path=questions_path,
+                                                                       scenes_path=scenes_path, use_cache=use_cache)
+        else:
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val', clvr_path=clvr_path,
+                                                                       questions_path=questions_path,
+                                                                       scenes_path=scenes_path, use_cache=use_cache)
 
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
                                                      num_workers=config['n_workers'], shuffle=False)
@@ -141,15 +150,26 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         with open(config, 'r') as fin:
             config = yaml.load(fin, Loader=yaml.FullLoader)
 
-        train_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='train', clvr_path=clvr_path,
-                                                                     questions_path=questions_path,
-                                                                     scenes_path=scenes_path, use_cache=use_cache)
+        if use_hdf5:
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train', clvr_path=clvr_path,
+                                                                         questions_path=questions_path,
+                                                                         scenes_path=scenes_path, use_cache=use_cache)
+        else:
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train', clvr_path=clvr_path,
+                                                                         questions_path=questions_path,
+                                                                         scenes_path=scenes_path, use_cache=use_cache)
+
         train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=config['batch_size'],
                                                        num_workers=config['n_workers'], shuffle=True)
         _print(f"Loaded Train Dataset at {len(train_dataloader)} batches of size {config['batch_size']}")
-        val_set = AVAILABLE_DATASETS[config['model_architecture']](config=config, split='val', clvr_path=clvr_path,
-                                                                   questions_path=questions_path,
-                                                                   scenes_path=scenes_path, use_cache=use_cache)
+        if use_hdf5:
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val', clvr_path=clvr_path,
+                                                                       questions_path=questions_path,
+                                                                       scenes_path=scenes_path, use_cache=use_cache)
+        else:
+            val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val', clvr_path=clvr_path,
+                                                                       questions_path=questions_path,
+                                                                       scenes_path=scenes_path, use_cache=use_cache)
         val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=config['batch_size'],
                                                      num_workers=config['n_workers'], shuffle=False)
         _print(f"Loaded Validation Dataset at {len(val_dataloader)} batches of size {config['batch_size']}")
@@ -268,13 +288,17 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--run_on_colab', type=str, help='if it runs on a google colab', default=0)
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
+    parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     args = parser.parse_args()
+    args.use_hdf5 = True
     args.run_on_colab = True
     args.use_cache = True
     if args.use_cache == 0:
         args.use_cache = False
     if args.run_on_colab == 0:
         args.run_on_colab = False
+    if args.use_hdf5 == 0:
+        args.use_hdf5 = False
     train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                 scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
-                use_cache=args.use_cache, run_on_colab=args.run_on_colab)
+                use_cache=args.use_cache, run_on_colab=args.run_on_colab, use_hdf5=args.use_hdf5)

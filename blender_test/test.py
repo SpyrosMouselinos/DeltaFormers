@@ -1,8 +1,8 @@
 import json
 import os.path as osp
+import random
 import sys
 
-import tqdm
 import yaml
 
 sys.path.insert(0, osp.abspath('.'))
@@ -24,7 +24,13 @@ AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
                     'DeltaQFormer': DeltaQFormer}
 
 
-def single_scene_translator(scene: dict, translation: dict):
+def single_scene_translator(scene: dict, translation: dict, alter_rotation_by=None, alter_position_by=None):
+    if alter_position_by is None:
+        alter_position_by = lambda x: x
+
+    if alter_rotation_by is None:
+        alter_rotation_by = lambda x: x
+
     image_index = scene['image_index']
     n_objects = len(scene['objects'])
 
@@ -36,9 +42,9 @@ def single_scene_translator(scene: dict, translation: dict):
     shapes = []
     sizes = []
     for obj in scene['objects']:
-        xs.append(obj['3d_coords'][0] / 3)
-        ys.append(obj['3d_coords'][1] / 3)
-        thetas.append(obj['3d_coords'][2] / 360)
+        xs.append(alter_position_by(obj['3d_coords'][0]) / 3)
+        ys.append(alter_position_by(obj['3d_coords'][1]) / 3)
+        thetas.append(alter_rotation_by(obj['3d_coords'][2]) / 360)
         colors.append(translation[obj['color']])
         materials.append(translation[obj['material']])
         shapes.append(translation[obj['shape']])
@@ -128,15 +134,17 @@ def load_model(device, load_from=None):
     return model
 
 
-def encode_questions_and_scenes(question, q2index, a2index, scene, translation):
+def encode_questions_and_scenes(question, q2index, a2index, scene, translation, alter_rotation_by=None,
+                                alter_position_by=None):
     image_index_scene, n_objects, object_positions, object_colors, object_shapes, object_materials, object_sizes = \
-        single_scene_translator(scene=scene, translation=translation)
+        single_scene_translator(scene=scene, translation=translation, alter_rotation_by=alter_rotation_by,
+                                alter_position_by=alter_position_by)
 
     image_index_question, n_tokens, q, a = single_question_parser(question,
                                                                   word_replace_dict={'true': 'yes',
-                                                                                     'True':'yes',
+                                                                                     'True': 'yes',
                                                                                      'false': 'no',
-                                                                                     'False':'no'
+                                                                                     'False': 'no'
                                                                                      },
                                                                   q2index=q2index,
                                                                   a2index=a2index)
@@ -158,8 +166,8 @@ def encode_questions_and_scenes(question, q2index, a2index, scene, translation):
              }
         y = a
     else:
-        print(f"Image index {image_index_scene} and question index {image_index_question} do not match!\n")
-        return 1,1
+        #print(f"Image index {image_index_scene} and question index {image_index_question} do not match!\n")
+        return 1, 1
 
     return x, y
 
@@ -180,35 +188,66 @@ def fp(model, x, y, device):
 #     parser.add_argument('--load_from', type=str, help='continue training',
 #                         default='../results/experiment_sq/mos_epoch_124.pt')
 #     args = parser.parse_args()
-    # model = load_model(device=args.device, load_from=args.load_from)
-    #
-    # translation, q2index, a2index = load_encoders()
-    #
-    # with open(f'../data/CLEVR_train_scenes.json', 'r') as fin:
-    #     parsed_json = json.load(fin)
-    #     scenes = parsed_json['scenes']
-    #
-    # with open(f'../data/CLEVR_train_questions.json', 'r') as fin:
-    #     parsed_json = json.load(fin)
-    #     questions = parsed_json['questions']
-    #
-    # acc = 0
-    # eligible = 0
-    # question_counter = 0
-    # scene_counter = 0
-    # while scene_counter < 5000:
-    #     scene = scenes[scene_counter]
-    #     question = questions[question_counter]
-    #     x, y = encode_questions_and_scenes(question, q2index, a2index, scene, translation)
-    #     if x == 0 and y == 0:
-    #         question_counter += 1
-    #         continue
-    #     elif x == 1 and y == 1:
-    #         scene_counter += 1
-    #         continue
-    #     else:
-    #         eligible += 1
-    #         acc += fp(model, x, y, device=args.device)[0]
-    #         question_counter += 1
-    #
-    # print(acc / eligible)
+#     model = load_model(device=args.device, load_from=args.load_from)
+#
+#     translation, q2index, a2index = load_encoders()
+#
+#     with open(f'../data/CLEVR_train_scenes.json', 'r') as fin:
+#         parsed_json = json.load(fin)
+#         scenes = parsed_json['scenes']
+#
+#     with open(f'../data/CLEVR_train_questions.json', 'r') as fin:
+#         parsed_json = json.load(fin)
+#         questions = parsed_json['questions']
+#
+#     import numpy as np
+#     performances = np.array([0,0,0,0])
+#
+#     acc = 0
+#     eligible = 0
+#     question_counter = 0
+#     scene_counter = 0
+#     # Experiment 1
+#     while scene_counter < 5000:
+#         scene = scenes[scene_counter]
+#         question = questions[question_counter]
+#         x, y = encode_questions_and_scenes(question, q2index, a2index, scene, translation)
+#         if x == 0 and y == 0:
+#             question_counter += 1
+#             continue
+#         elif x == 1 and y == 1:
+#             scene_counter += 1
+#             continue
+#         else:
+#             eligible += 1
+#             acc += fp(model, x, y, device=args.device)[0]
+#             question_counter += 1
+#     print("Original Performance\n")
+#     print(acc / eligible)
+#     performances[0] = acc / eligible
+#     print('\n')
+#
+#
+#     acc = 0
+#     eligible = 0
+#     question_counter = 0
+#     scene_counter = 5000
+#     # Experiment 1
+#     while scene_counter < 10_000:
+#         scene = scenes[scene_counter]
+#         question = questions[question_counter]
+#         x, y = encode_questions_and_scenes(question, q2index, a2index, scene, translation)
+#         if x == 0 and y == 0:
+#             question_counter += 1
+#             continue
+#         elif x == 1 and y == 1:
+#             scene_counter += 1
+#             continue
+#         else:
+#             eligible += 1
+#             acc += fp(model, x, y, device=args.device)[0]
+#             question_counter += 1
+#     print("Original Performance\n")
+#     print(acc / eligible)
+#     performances[1] = acc / eligible
+#     print('\n')
