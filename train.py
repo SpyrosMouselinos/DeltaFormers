@@ -22,12 +22,18 @@ AVAILABLE_DATASETS = {
     'DeltaRN': [StateCLEVR],
     'DeltaSQFormer': [StateCLEVR],
     'DeltaQFormer': [StateCLEVR],
+    'DeltaSQFormerCross': [StateCLEVR],
+    'DeltaSQFormerDisentangled': [StateCLEVR],
+    'DeltaSQFormerLinear': [StateCLEVR],
     'DeltaRNFP': [ImageCLEVR, ImageCLEVR_HDF5],
 }
 
 AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
                     'DeltaRNFP': DeltaRNFP,
                     'DeltaSQFormer': DeltaSQFormer,
+                    'DeltaSQFormerCross': DeltaSQFormerCross,
+                    'DeltaSQFormerDisentangled': DeltaSQFormerDisentangled,
+                    'DeltaSQFormerLinear': DeltaSQFormerLinear,
                     'DeltaQFormer': DeltaQFormer}
 
 
@@ -44,7 +50,7 @@ def save_all(model, optim, sched, bs_sched, epoch, loss, path):
 
 
 def load(path: str, model: nn.Module, optim=None, sched=None, bs_sched=None, mode='all'):
-    _print("Remember that available modes are: [all, model, model+opt, model+opt+sched]\n")
+    _print("Remember that available modes are: [all, model, model+opt, model+opt+sched, model+opt+sched+bs_sched]\n")
     checkpoint = torch.load(path)
     epoch = checkpoint['epoch']
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -110,7 +116,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         _print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
-        # TODO: Change this!
+
         if use_hdf5:
             train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='train',
                                                                             clvr_path=clvr_path,
@@ -118,6 +124,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             scenes_path=scenes_path,
                                                                             use_cache=use_cache)
         else:
+            # TODO: Change this!
             train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
@@ -132,6 +139,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                           questions_path=questions_path,
                                                                           scenes_path=scenes_path, use_cache=use_cache)
         else:
+            pass
             val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
                                                                           clvr_path=clvr_path,
                                                                           questions_path=questions_path,
@@ -163,7 +171,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             scenes_path=scenes_path,
                                                                             use_cache=use_cache)
         else:
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
@@ -293,10 +301,11 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_fp')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_fp.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_linear_sq')
+    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_linear_sq.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
+    parser.add_argument('--load_mode', type=str, help='loading mode', default='all')
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
@@ -304,14 +313,17 @@ if __name__ == '__main__':
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     args = parser.parse_args()
 
-    args.use_hdf5 = True
-    args.use_cache = True
+
 
     if args.use_cache == 0:
         args.use_cache = False
+    else:
+        args.use_cache = True
 
     if args.use_hdf5 == 0:
         args.use_hdf5 = False
+    else:
+        args.use_hdf5 = True
 
     train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                 scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,

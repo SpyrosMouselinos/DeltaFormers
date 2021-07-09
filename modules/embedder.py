@@ -29,7 +29,7 @@ class ConvInputModel(Module):
         coord_tensor = torch.autograd.Variable(ct, requires_grad=False)
         if next(self.parameters()).is_cuda:
             coord_tensor = coord_tensor.to('cuda:0')
-        return  coord_tensor
+        return coord_tensor
 
     def forward(self, img):
         x = self.conv1(img)
@@ -181,12 +181,12 @@ class SplitModalEmbedder(Module):
         otype_embeddings = type_embeddings[:, 0:10]
         qtype_embeddings = type_embeddings[:, 10:]
 
-        object_mask = types.eq(1) * 1.0
-        object_mask = object_mask[:, :10]
+        object_mask_ = types.eq(1) * 1.0
+        object_mask = object_mask_[:, :10]
         object_mask = object_mask.unsqueeze(1).unsqueeze(2)
 
-        question_mask = types.eq(2) * 1.0
-        question_mask = question_mask[:, 10:]
+        question_mask_ = types.eq(2) * 1.0
+        question_mask = question_mask_[:, 10:]
         question_mask = question_mask.unsqueeze(1).unsqueeze(2)
 
         mixed_mask = torch.cat([object_mask, question_mask], dim=3)
@@ -201,7 +201,7 @@ class SplitModalEmbedder(Module):
         object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
         ore = self.reproject(object_related_embeddings)
         ore = ore + otype_embeddings
-        return ore, questions, object_mask, question_mask, mixed_mask
+        return ore, questions, object_mask_, question_mask_, mixed_mask
 
 
 class SplitModalEmbedderNoType(Module):
@@ -246,6 +246,107 @@ class SplitModalEmbedderNoType(Module):
         object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
         ore = self.reproject(object_related_embeddings)
         return ore, questions, object_mask, question_mask, mixed_mask
+
+
+class SplitModalEmbedderDisentangled(Module):
+    def __init__(self, config: dict):
+        super(SplitModalEmbedderDisentangled, self).__init__()
+        self.config = config
+        self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['embedding_dim'],
+                                                padding_idx=0)
+        self.position_upscale_projection = nn.Linear(3, config['embedding_dim'])
+        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0)
+        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
+        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.token_type_embeddings = nn.Embedding(config['num_token_types'], config['hidden_dim'], padding_idx=0)
+        return
+
+    def forward(self,
+                positions,
+                types,
+                object_positions,
+                object_colors,
+                object_shapes,
+                object_materials,
+                object_sizes,
+                question):
+        type_embeddings = self.token_type_embeddings(types)
+        otype_embeddings = type_embeddings[:, 0:10]
+        qtype_embeddings = type_embeddings[:, 10:]
+
+        object_mask_ = types.eq(1) * 1.0
+        object_mask = object_mask_[:, :10]
+        # Extend mask 5 times before expansion #
+        object_mask = torch.cat([object_mask, object_mask, object_mask, object_mask, object_mask], dim=1)
+        object_mask = object_mask.unsqueeze(1).unsqueeze(2)
+
+        question_mask_ = types.eq(2) * 1.0
+        question_mask = question_mask_[:, 10:]
+        question_mask = question_mask.unsqueeze(1).unsqueeze(2)
+
+        mixed_mask = torch.cat([object_mask, question_mask], dim=3)
+
+        questions = self.question_embeddings(question)
+        questions = questions + qtype_embeddings
+
+        op_proj = self.position_upscale_projection(object_positions) + otype_embeddings
+        oc_proj = self.color_embeddings(object_colors) + otype_embeddings
+        os_proj = self.shape_embeddings(object_shapes) + otype_embeddings
+        om_proj = self.material_embeddings(object_materials) + otype_embeddings
+        oz_proj = self.size_embeddings(object_sizes) + otype_embeddings
+
+        return op_proj, oc_proj, os_proj, om_proj, oz_proj, questions, mixed_mask
+
+
+class SplitModalEmbedderLinear(Module):
+    def __init__(self, config: dict):
+        super(SplitModalEmbedderLinear, self).__init__()
+        self.config = config
+        self.question_embeddings = nn.Embedding(config['question_vocabulary_size'], config['embedding_dim'],
+                                                padding_idx=0)
+        self.color_embeddings = nn.Embedding(config['num_colors'] + 1, config['embedding_dim'], padding_idx=0)
+        self.shape_embeddings = nn.Embedding(config['num_shapes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
+        self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
+        self.token_type_embeddings = nn.Embedding(config['num_token_types'] + 1, config['hidden_dim'], padding_idx=0)
+        self.reproject = nn.Linear(3 + 4 * config['embedding_dim'], config['hidden_dim'])
+        if 'num_special_heads' in self.config:
+            self.num_special_heads = self.config['num_special_heads']
+        else:
+            self.num_special_heads = 4
+        return
+
+    def forward(self,
+                positions,
+                types,
+                object_positions,
+                object_colors,
+                object_shapes,
+                object_materials,
+                object_sizes,
+                question):
+        special_types = (3 * torch.ones(size=(types.size(0), self.num_special_heads))).long().to(types.device.type)
+        types = torch.cat([types, special_types], dim=-1)
+        type_embeddings = self.token_type_embeddings(types)
+        otype_embeddings = type_embeddings[:, 0:10]
+        qtype_embeddings = type_embeddings[:, 10:-self.num_special_heads]
+        stype_embeddings = type_embeddings[:, -self.num_special_heads:]
+
+        mixed_mask = types.eq(1) * 1.0 + types.eq(2) * 1.0
+        special_mask = types.eq(3) * 1.0
+
+        questions = self.question_embeddings(question)
+        questions = questions + qtype_embeddings
+        op_proj = object_positions
+        oc_proj = self.color_embeddings(object_colors)
+        os_proj = self.shape_embeddings(object_shapes)
+        om_proj = self.material_embeddings(object_materials)
+        oz_proj = self.size_embeddings(object_sizes)
+        object_related_embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj], 2)
+        ore = self.reproject(object_related_embeddings)
+        ore = ore + otype_embeddings
+        return ore, questions, stype_embeddings, mixed_mask, special_mask
 
 
 class VisualEmbedderNoType(Module):
@@ -433,6 +534,86 @@ class DeltaSQFormer(Module):
         return answer, atts, None
 
 
+class DeltaSQFormerCross(Module):
+    def __init__(self, config: dict):
+        super(DeltaSQFormerCross, self).__init__()
+        self.sme = SplitModalEmbedder(config)
+        self.pos_enc = PositionalEncoding(d_model=config['embedding_dim'], dropout=0.1, max_len=50)
+        self.oln = BertLayerNorm(config['hidden_dim'])
+        self.qln = BertLayerNorm(config['hidden_dim'])
+        self.be = BertEncoder(config)
+        self.classhead = MLPClassifierHead(config)
+        return
+
+    @staticmethod
+    def calc_cross_mask(omask, qmask):
+        stacked_om = torch.stack([omask] * omask.size(1), dim=1)
+        stacked_qm = torch.stack([qmask] * qmask.size(1), dim=1)
+        cross_mask = torch.einsum("bij,bi->bij", stacked_qm, omask) + torch.einsum("bij,bi->bij", stacked_om, qmask)
+        return cross_mask.unsqueeze(1)
+
+    def forward(self, **kwargs):
+        object_emb, question_emb, omask, qmask, _ = self.sme(**kwargs)
+        cross_mask = self.calc_cross_mask(omask, qmask)
+        object_emb = self.oln(object_emb)
+        question_emb = self.pos_enc(question_emb)
+        question_emb = self.qln(question_emb)
+        embeddings = torch.cat([object_emb, question_emb], dim=1)
+        out, atts = self.be.forward(embeddings, cross_mask, output_all_encoded_layers=False,
+                                    output_attention_probs=True)
+        item_output = out[-1][:, 0]
+        answer = self.classhead(item_output)
+
+        return answer, atts, None
+
+
+class DeltaSQFormerDisentangled(Module):
+    def __init__(self, config: dict):
+        super(DeltaSQFormerDisentangled, self).__init__()
+        self.smed = SplitModalEmbedderDisentangled(config)
+        self.q_pos_enc = PositionalEncoding(d_model=config['hidden_dim'], dropout=0.1, max_len=50)
+        self.o_pos_enc = PositionalEncoding(d_model=config['hidden_dim'], dropout=0.1, max_len=10)
+        self.opln = BertLayerNorm(config['hidden_dim'])
+        self.ocln = BertLayerNorm(config['hidden_dim'])
+        self.osln = BertLayerNorm(config['hidden_dim'])
+        self.omln = BertLayerNorm(config['hidden_dim'])
+        self.ozln = BertLayerNorm(config['hidden_dim'])
+        self.qln = BertLayerNorm(config['hidden_dim'])
+        self.be = BertEncoder(config)
+        self.classhead = MLPClassifierHead(config)
+        return
+
+    def forward(self, **kwargs):
+        op_proj, oc_proj, os_proj, om_proj, oz_proj, questions, mixed_mask = self.smed(**kwargs)
+        # Position Tokens #
+        op_proj = self.opln(self.o_pos_enc(op_proj))
+
+        # Color Tokens #
+        oc_proj = self.ocln(self.o_pos_enc(oc_proj))
+
+        # Shape Tokens #
+        os_proj = self.osln(self.o_pos_enc(os_proj))
+
+        # Material Tokens #
+        om_proj = self.omln(self.o_pos_enc(om_proj))
+
+        # Size Tokens #
+        oz_proj = self.ozln(self.o_pos_enc(oz_proj))
+
+        # Question Tokens #
+
+        question_emb = self.q_pos_enc(questions)
+        question_emb = self.qln(question_emb)
+
+        embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj, question_emb], dim=1)
+        out, atts = self.be.forward(embeddings, mixed_mask, output_all_encoded_layers=False,
+                                    output_attention_probs=True)
+        item_output = out[-1][:, 0]
+        answer = self.classhead(item_output)
+
+        return answer, atts, None
+
+
 class DeltaQFormer(Module):
     def __init__(self, config: dict):
         super(DeltaQFormer, self).__init__()
@@ -451,3 +632,46 @@ class DeltaQFormer(Module):
         return answer, atts[-1], None
 
 
+class DeltaSQFormerLinear(Module):
+    def __init__(self, config: dict):
+        super(DeltaSQFormerLinear, self).__init__()
+        self.config = config
+        self.smel = SplitModalEmbedderLinear(config)
+        self.pos_enc = PositionalEncoding(d_model=config['embedding_dim'], dropout=0.1, max_len=50)
+        self.oln = BertLayerNorm(config['hidden_dim'])
+        self.qln = BertLayerNorm(config['hidden_dim'])
+        self.sln = BertLayerNorm(config['hidden_dim'])
+        self.be = BertEncoder(config)
+        self.classhead = MLPClassifierHead(config)
+        if 'num_special_heads' in self.config:
+            self.num_special_heads = self.config['num_special_heads']
+        else:
+            self.num_special_heads = 4
+        self.special_heads = nn.Parameter(torch.randn(self.num_special_heads, config['hidden_dim']),
+                                          requires_grad=True)
+        return
+
+    @staticmethod
+    def calc_cross_mask(a, b):
+        stacked_om = torch.stack([a] * a.size(1), dim=1)
+        stacked_qm = torch.stack([b] * b.size(1), dim=1)
+        cross_mask = torch.einsum("bij,bi->bij", stacked_qm, a) + torch.einsum("bij,bi->bij", stacked_om, b)
+        return cross_mask.unsqueeze(1)
+
+    def forward(self, **kwargs):
+        ore, questions, stype_embeddings, mixed_mask, special_mask = self.smel(**kwargs)
+        cross_mask = self.calc_cross_mask(mixed_mask, special_mask)
+        object_emb = self.oln(ore)
+        question_emb = self.pos_enc(questions)
+        question_emb = self.qln(question_emb)
+        special_emb = self.special_heads.repeat((question_emb.size(0), 1, 1))
+        special_emb = special_emb + stype_embeddings
+        special_emb = self.sln(special_emb)
+
+        embeddings = torch.cat([object_emb, question_emb, special_emb], dim=1)
+        out, atts = self.be.forward(embeddings, cross_mask, output_all_encoded_layers=False,
+                                    output_attention_probs=True)
+        item_output = torch.mean(out[-1][:, -self.num_special_heads:],dim=1)
+        answer = self.classhead(item_output)
+
+        return answer, atts, None

@@ -1,4 +1,4 @@
-model_architecture: DeltaSQFormer
+model_architecture: DeltaSQFormerLinear
 
 max_objects_per_scene: 10
 max_question_tokens_per_scene: 50
