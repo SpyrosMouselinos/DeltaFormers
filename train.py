@@ -171,7 +171,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             scenes_path=scenes_path,
                                                                             use_cache=use_cache)
         else:
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
