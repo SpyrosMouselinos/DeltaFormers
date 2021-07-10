@@ -102,7 +102,8 @@ def accuracy_metric(y_pred, y_true):
 
 
 def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
-                questions_path='data/', scenes_path='data/', use_cache=False, use_hdf5=False):
+                questions_path='data/', scenes_path='data/', use_cache=False, use_hdf5=False,
+                freeze_exponential_growth=False):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -153,11 +154,14 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                     gamma=config['scheduler_gamma'])
 
         bs_scheduler = BatchSizeScheduler(train_ds=train_set, initial_bs=config['batch_size'],
-                                          step_size=config['scheduler_step_size'], gamma=config['scheduler_gamma'],
+                                          step_size=config['bs_scheduler_step_size'],
+                                          gamma=config['bs_scheduler_gamma'],
                                           max_bs=config['max_batch_size'])
         model, optimizer, scheduler, bs_scheduler, init_epoch = load(path=load_from, model=model, optim=optimizer,
                                                                      sched=scheduler, bs_sched=bs_scheduler,
                                                                      mode='all')
+        if freeze_exponential_growth:
+            bs_scheduler.step_size = -1
 
     else:
         check_paths(config, experiment_name)
@@ -301,19 +305,22 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_linear_sq')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_linear_sq.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default=None)
+    parser.add_argument('--config', type=str, help='The path to the config file', default=None)
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
-    parser.add_argument('--load_mode', type=str, help='loading mode', default='all')
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
+    parser.add_argument('--freeze_exponential_growth', type=int, help='if to stay on same lr uppon resume', default=0)
     args = parser.parse_args()
 
-
+    if args.freeze_exponential_growth == 0:
+        args.freeze_exponential_growth = False
+    else:
+        args.freeze_exponential_growth = True
 
     if args.use_cache == 0:
         args.use_cache = False
@@ -327,4 +334,5 @@ if __name__ == '__main__':
 
     train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                 scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
-                use_cache=args.use_cache, use_hdf5=args.use_hdf5)
+                use_cache=args.use_cache, use_hdf5=args.use_hdf5,
+                freeze_exponential_growth=args.freeze_exponential_growth)

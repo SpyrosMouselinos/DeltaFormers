@@ -65,7 +65,10 @@ class BertSelfAttention(Module):
         self.query = nn.Linear(config['hidden_dim'], self.all_head_size)
         self.key = nn.Linear(config['hidden_dim'], self.all_head_size)
         self.value = nn.Linear(config['hidden_dim'], self.all_head_size)
-
+        if 'attention_temperature' in config:
+            self.temp = config['attention_temperature']
+        else:
+            self.temp = 1
         self.dropout = nn.Dropout(0.1)
 
     def transpose_for_scores(self, x):
@@ -89,7 +92,7 @@ class BertSelfAttention(Module):
         attention_scores = attention_scores + attention_mask
 
         # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        attention_probs = nn.Softmax(dim=-1)(attention_scores / self.temp)
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
