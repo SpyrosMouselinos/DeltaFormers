@@ -380,7 +380,7 @@ class ImageCLEVR_HDF5(Dataset):
         else:
             self.transform = transforms.Compose([transforms.ToTensor()])
         if osp.exists(f'data/{split}_image_dataset.pt'):
-            with open(f'data/{split}_image_dataset.pt', 'rb')as fin:
+            with open(f'data/{split}_image_dataset.pt', 'rb') as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.q2index = info['q2index']
@@ -408,8 +408,8 @@ class ImageCLEVR_HDF5(Dataset):
             with open(f'data/{self.split}_image_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
         if osp.exists(f'data/{split}_images.h5'):
-            self.hdf5_file = h5py.File(f'data/{split}_images.h5', 'r')
-            self.n_images = self.hdf5_file['image'].shape[0]
+            self.hdf5_file = np.array(h5py.File(f'data/{split}_images.h5', 'r')['image']).astype("uint8")
+            self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
         else:
             available_images = natsorted(os.listdir(self.clvr_path + f'/images/{self.split}/'))
@@ -423,8 +423,8 @@ class ImageCLEVR_HDF5(Dataset):
                 f["image"][i] = image
             f.close()
             _print("Image HDF5 written succesfully!\n")
-            self.hdf5_file = h5py.File(f'data/{split}_images.h5', 'r')
-            self.n_images = self.hdf5_file['image'].shape[0]
+            self.hdf5_file = np.array(h5py.File(f'data/{split}_images.h5', 'r')['image']).astype("uint8")
+            self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
 
     def __len__(self):
@@ -436,7 +436,7 @@ class ImageCLEVR_HDF5(Dataset):
         question = self.x[idx]['question']
         current_image_fn = self.x[idx]['image_filename']
         current_image_index = int(current_image_fn.split('.png')[0].split(f'{self.split}_')[-1])
-        image_data = Image.fromarray(np.array(self.hdf5_file['image'][current_image_index]).astype("uint8"), 'RGB')
+        image_data = Image.fromarray(self.hdf5_file[current_image_index], 'RGB')
         image = self.transform(image_data)
         answer = self.y[idx]
 
