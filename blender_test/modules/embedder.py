@@ -550,6 +550,7 @@ class DeltaSQFormerCross(Module):
         stacked_om = torch.stack([omask] * omask.size(1), dim=1)
         stacked_qm = torch.stack([qmask] * qmask.size(1), dim=1)
         cross_mask = torch.einsum("bij,bi->bij", stacked_qm, omask) + torch.einsum("bij,bi->bij", stacked_om, qmask)
+        cross_mask = (1.0 - cross_mask) * -10000.0
         return cross_mask.unsqueeze(1)
 
     def forward(self, **kwargs):
@@ -585,6 +586,7 @@ class DeltaSQFormerDisentangled(Module):
 
     def forward(self, **kwargs):
         op_proj, oc_proj, os_proj, om_proj, oz_proj, questions, mixed_mask = self.smed(**kwargs)
+        mixed_mask = (1.0 - mixed_mask) * -10000.0
         # Position Tokens #
         op_proj = self.opln(self.o_pos_enc(op_proj))
 
@@ -656,6 +658,7 @@ class DeltaSQFormerLinear(Module):
         stacked_om = torch.stack([a] * a.size(1), dim=1)
         stacked_qm = torch.stack([b] * b.size(1), dim=1)
         cross_mask = torch.einsum("bij,bi->bij", stacked_qm, a) + torch.einsum("bij,bi->bij", stacked_om, b)
+        cross_mask = (1.0 - cross_mask) * -10000.0
         return cross_mask.unsqueeze(1)
 
     def forward(self, **kwargs):

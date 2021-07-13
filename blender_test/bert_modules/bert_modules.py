@@ -89,11 +89,36 @@ class BertSelfAttention(Module):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
         attention_scores = attention_scores / math.sqrt(self.attention_head_size)
         # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+        with open('C:\\Users\\Guldan\\Desktop\\before_log.txt', 'w') as fout:
+            xxx = attention_scores.detach().cpu().numpy()[0][0]
+            for i in range(63):
+                fout.write(f'Token_{i},')
+            fout.write('Token_63\n')
+            for i in range(64):
+                for j in range(64):
+                    fout.write(f'{xxx[i,j]}'+ ',')
+                fout.write('\n')
         attention_scores = attention_scores + attention_mask
-
+        with open('C:\\Users\\Guldan\\Desktop\\after_log.txt', 'w') as fout:
+            xxx = attention_scores.detach().cpu().numpy()[0][0]
+            for i in range(63):
+                fout.write(f'Token_{i},')
+            fout.write('Token_63\n')
+            for i in range(64):
+                for j in range(64):
+                    fout.write(f'{xxx[i,j]}'+ ',')
+                fout.write('\n')
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores / self.temp)
-
+        with open('C:\\Users\\Guldan\\Desktop\\after_sm_log.txt', 'w') as fout:
+            xxx = attention_probs.detach().cpu().numpy()[0][0]
+            for i in range(63):
+                fout.write(f'Token_{i},')
+            fout.write('Token_63\n')
+            for i in range(64):
+                for j in range(64):
+                    fout.write(f'{xxx[i,j]}'+ ',')
+                fout.write('\n')
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         attention_probs = self.dropout(attention_probs)

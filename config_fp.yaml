@@ -30,7 +30,7 @@ max_lr: 0.0006
 max_batch_size: 512
 scheduler_step_size: 10
 bs_scheduler_step_size: 10
-scheduler_gamma: 1.8
+scheduler_gamma: 1.9
 bs_scheduler_gamma: 2
 log_every: 100
 validate_every: 20000

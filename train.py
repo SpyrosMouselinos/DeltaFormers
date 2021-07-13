@@ -212,6 +212,11 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                           max_bs=config['max_batch_size'])
         init_epoch = 0
 
+    ### Multi-GPU-Support ###
+    if torch.cuda.device_count() > 1:
+        _print(f"Let's use {torch.cuda.device_count()} GPUS")
+        model = nn.DataParallel(model)
+
     criterion = nn.CrossEntropyLoss()
     metric = accuracy_metric
 
@@ -305,8 +310,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default=None)
-    parser.add_argument('--config', type=str, help='The path to the config file', default=None)
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_fp_test')
+    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_fp.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
