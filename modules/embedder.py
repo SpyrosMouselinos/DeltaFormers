@@ -27,8 +27,6 @@ class ConvInputModel(Module):
         ct = torch.stack((x, y))
         ct = ct.unsqueeze(0).repeat(b, 1, 1, 1)
         coord_tensor = torch.autograd.Variable(ct, requires_grad=False)
-        if next(self.parameters()).is_cuda:
-            coord_tensor = coord_tensor.to('cuda:0')
         return coord_tensor
 
     def forward(self, img):
@@ -48,8 +46,7 @@ class ConvInputModel(Module):
         b, k, d, _ = x.size()
         x = x.view(b, k, d * d)  # (B x 24 x 8*8)
         coord_tensor = self.build_coord_tensor(b, d).view(b, 2, d * d)  # (B x 2 x 8*8)
-
-        x = torch.cat([x, coord_tensor], 1)  # (B x 24+2 x 8*8)
+        x = torch.cat([x, coord_tensor.to(x.device)], 1)  # (B x 24+2 x 8*8)
         x = x.permute(0, 2, 1)  # (B x 64 x 24+2)
         return x
 
