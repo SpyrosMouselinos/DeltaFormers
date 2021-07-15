@@ -53,7 +53,7 @@ def load(path: str, model: nn.Module, optim=None, sched=None, bs_sched=None, mod
     _print("Remember that available modes are: [all, model, model+opt, model+opt+sched, model+opt+sched+bs_sched]\n")
     checkpoint = torch.load(path)
     # removes 'module' from dict entries, pytorch bug #3805
-    if torch.cuda.device_count() == 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
+    if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
         checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in checkpoint['model_state_dict'].items()}
     # if torch.cuda.device_count() > 1 and not any(k.startswith('module.') for k in checkpoint.keys()):
     #     checkpoint = {'module.' + k: v for k, v in checkpoint.items()}
