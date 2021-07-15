@@ -112,9 +112,9 @@ def kwarg_dict_to_device(data_obj, device):
 
 
 def load_encoders():
-    with open('../translation_tables.yaml', 'r') as fin:
+    with open('./translation_tables.yaml', 'r') as fin:
         translation = yaml.load(fin, Loader=yaml.FullLoader)['translation']
-    with open(f'../data/vocab.json', 'r') as fin:
+    with open(f'./vocab.json', 'r') as fin:
         parsed_json = json.load(fin)
         q2index = parsed_json['question_token_to_idx']
         a2index = parsed_json['answer_token_to_idx']
@@ -123,16 +123,17 @@ def load_encoders():
 
 
 def load_model(device, load_from=None):
-    if device == 'cuda':
-        device = 'cuda:0'
+    prefix = load_from.split('results/')[0]
     experiment_name = load_from.split('results/')[-1].split('/')[0]
-    config = f'../results/{experiment_name}/config.yaml'
+    config = f'{prefix}/results/{experiment_name}/config.yaml'
     with open(config, 'r') as fin:
         config = yaml.load(fin, Loader=yaml.FullLoader)
 
     model = AVAILABLE_MODELS[config['model_architecture']](config)
     model = model.to(device)
     checkpoint = torch.load(load_from)
+    if any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
+        checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in checkpoint['model_state_dict'].items()}
     model.load_state_dict(checkpoint['model_state_dict'])
     print(f"Loading Model of type: {config['model_architecture']}\n")
     model.eval()
