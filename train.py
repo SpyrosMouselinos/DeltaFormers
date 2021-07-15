@@ -52,6 +52,11 @@ def save_all(model, optim, sched, bs_sched, epoch, loss, path):
 def load(path: str, model: nn.Module, optim=None, sched=None, bs_sched=None, mode='all'):
     _print("Remember that available modes are: [all, model, model+opt, model+opt+sched, model+opt+sched+bs_sched]\n")
     checkpoint = torch.load(path)
+    # removes 'module' from dict entries, pytorch bug #3805
+    if torch.cuda.device_count() == 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
+        checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in checkpoint['model_state_dict'].items()}
+    # if torch.cuda.device_count() > 1 and not any(k.startswith('module.') for k in checkpoint.keys()):
+    #     checkpoint = {'module.' + k: v for k, v in checkpoint.items()}
     epoch = checkpoint['epoch']
     model.load_state_dict(checkpoint['model_state_dict'])
     if ('opt' in mode or 'all' in mode) and optim is not None:
@@ -310,15 +315,15 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_fp_test')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_fp.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default=None)
+    parser.add_argument('--config', type=str, help='The path to the config file', default=None)
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
-    parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
+    parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=1)
     parser.add_argument('--freeze_exponential_growth', type=int, help='if to stay on same lr uppon resume', default=0)
     args = parser.parse_args()
 
