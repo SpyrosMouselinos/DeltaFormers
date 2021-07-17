@@ -5,7 +5,7 @@ max_question_tokens_per_scene: 50
 question_vocabulary_size: 93
 embedding_dim: 32
 visual_hidden_dim: 26
-hidden_dim: 128
+hidden_dim: 256
 inter_dim: 256
 num_token_types: 3
 num_attention_heads: 8
@@ -22,24 +22,24 @@ num_scene_positions: 4
 num_questions_per_image: 10
 
 
-max_epochs: 200
-batch_size: 64
-lr: 0.00005
+max_epochs: 300
+batch_size: 128
+lr: 0.000005
 clip_grad_norm: 10
-max_lr: 0.0006
-max_batch_size: 512
-scheduler_step_size: 10
-bs_scheduler_step_size: 10
-scheduler_gamma: 1.9
+max_lr: 0.0005
+max_batch_size: 128
+scheduler_step_size: 20
+bs_scheduler_step_size: 20
+scheduler_gamma: 2
 bs_scheduler_gamma: 2
 log_every: 100
 validate_every: 20000
 early_stopping: 10
 
 
-g_layers: [256,256,256,256]
+g_layers: [512,512,512,512]
 question_injection_position: 0
-f_fc1: 256
-f_fc2: 256
-rl_dropout: 0.3
-n_workers: 0
+f_fc1: 512
+f_fc2: 512
+rl_dropout: 0.5
+n_workers: 4
