@@ -245,8 +245,8 @@ class StateCLEVR(Dataset):
 
     def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None,
                  use_cache=False):
-        if osp.exists(f'data/{split}_dataset.pt'):
-            with open(f'data/{split}_dataset.pt', 'rb')as fin:
+        if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
+            with open(f'{scenes_path}/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.translation = info['translation']
@@ -258,7 +258,7 @@ class StateCLEVR(Dataset):
         else:
             with open(osp.dirname(osp.dirname(__file__)) + '/translation_tables.yaml', 'r') as fin:
                 translation = yaml.load(fin, Loader=yaml.FullLoader)['translation']
-            with open(f'data/vocab.json', 'r') as fin:
+            with open(f'{questions_path}/vocab.json', 'r') as fin:
                 parsed_json = json.load(fin)
                 q2index = parsed_json['question_token_to_idx']
                 a2index = parsed_json['answer_token_to_idx']
@@ -281,7 +281,7 @@ class StateCLEVR(Dataset):
                 'x': self.x,
                 'y': self.y
             }
-            with open(f'data/{self.split}_dataset.pt', 'wb') as fout:
+            with open(f'{scenes_path}/{self.split}_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
 
     def __len__(self):
@@ -309,8 +309,8 @@ class ImageCLEVR(Dataset):
         else:
             self.transform = transforms.Compose([transforms.Resize((128, 128)),
                                                  transforms.ToTensor()])
-        if osp.exists(f'data/{split}_image_dataset.pt'):
-            with open(f'data/{split}_image_dataset.pt', 'rb')as fin:
+        if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
+            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.q2index = info['q2index']
@@ -320,7 +320,7 @@ class ImageCLEVR(Dataset):
             _print("Dataset loaded succesfully!\n")
         else:
             self.split = split
-            with open(f'data/vocab.json', 'r') as fin:
+            with open(f'{questions_path}/vocab.json', 'r') as fin:
                 parsed_json = json.load(fin)
                 self.q2index = parsed_json['question_token_to_idx']
                 self.a2index = parsed_json['answer_token_to_idx']
@@ -335,7 +335,7 @@ class ImageCLEVR(Dataset):
                 'x': self.x,
                 'y': self.y
             }
-            with open(f'data/{self.split}_image_dataset.pt', 'wb') as fout:
+            with open(f'{clvr_path}/{self.split}_image_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
 
         self.cached_images = {}
@@ -379,8 +379,8 @@ class ImageCLEVR_HDF5(Dataset):
                                                  transforms.ToTensor()])
         else:
             self.transform = transforms.Compose([transforms.ToTensor()])
-        if osp.exists(f'data/{split}_image_dataset.pt'):
-            with open(f'data/{split}_image_dataset.pt', 'rb') as fin:
+        if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
+            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb') as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.q2index = info['q2index']
@@ -390,7 +390,7 @@ class ImageCLEVR_HDF5(Dataset):
             _print("Dataset loaded succesfully!\n")
         else:
             self.split = split
-            with open(f'data/vocab.json', 'r') as fin:
+            with open(f'{questions_path}/vocab.json', 'r') as fin:
                 parsed_json = json.load(fin)
                 self.q2index = parsed_json['question_token_to_idx']
                 self.a2index = parsed_json['answer_token_to_idx']
@@ -405,17 +405,17 @@ class ImageCLEVR_HDF5(Dataset):
                 'x': self.x,
                 'y': self.y
             }
-            with open(f'data/{self.split}_image_dataset.pt', 'wb') as fout:
+            with open(f'{clvr_path}/{self.split}_image_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
-        if osp.exists(f'data/{split}_images.h5'):
-            self.hdf5_file = np.array(h5py.File(f'data/{split}_images.h5', 'r')['image']).astype("uint8")
+        if osp.exists(f'{clvr_path}/{split}_images.h5'):
+            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images.h5', 'r')['image']).astype("uint8")
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
         else:
             available_images = natsorted(os.listdir(self.clvr_path + f'/images/{self.split}/'))
             image_train_shape = (len(available_images), 128, 128, 3)
 
-            f = h5py.File(f'data/{split}_images.h5', mode='w')
+            f = h5py.File(f'{clvr_path}/{split}_images.h5', mode='w')
             f.create_dataset("image", image_train_shape, h5py.h5t.STD_U8BE)
 
             for i, img_addr in enumerate(available_images):
@@ -423,7 +423,7 @@ class ImageCLEVR_HDF5(Dataset):
                 f["image"][i] = image
             f.close()
             _print("Image HDF5 written succesfully!\n")
-            self.hdf5_file = np.array(h5py.File(f'data/{split}_images.h5', 'r')['image']).astype("uint8")
+            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images.h5', 'r')['image']).astype("uint8")
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
 
