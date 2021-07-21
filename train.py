@@ -258,10 +258,14 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                                               val_batch_index + 1)))
                 if total_val_loss / (val_batch_index + 1) < best_val_loss:
                     best_val_loss = total_val_loss / (val_batch_index + 1)
-
+                    _print("Saving Model...")
                     save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
                              f'./results/{experiment_name}')
-
+                    if osp.exists(f'./results/{experiment_name}/mos_epoch_{epoch}.pt'):
+                        _print("Model saved successfully!\n")
+                    else:
+                        _print("Failed to save Model... Aborting\n")
+                        return
                     overfit_count = -1
                 else:
                     overfit_count += 1
