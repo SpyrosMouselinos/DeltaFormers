@@ -562,7 +562,7 @@ class DeltaSQFormerCross(Module):
         item_output = out[-1][:, 0]
         answer = self.classhead(item_output)
 
-        return answer, atts, None
+        return answer, atts, item_output
 
 
 class DeltaSQFormerDisentangled(Module):
@@ -610,7 +610,7 @@ class DeltaSQFormerDisentangled(Module):
         item_output = out[-1][:, 0]
         answer = self.classhead(item_output)
 
-        return answer, atts, None
+        return answer, atts, item_output
 
 
 class DeltaQFormer(Module):
@@ -674,4 +674,4 @@ class DeltaSQFormerLinear(Module):
         item_output = torch.mean(out[-1][:, -self.num_special_heads:],dim=1)
         answer = self.classhead(item_output)
 
-        return answer, atts, None
+        return answer, atts, item_output

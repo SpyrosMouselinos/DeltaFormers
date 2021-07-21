@@ -4,12 +4,12 @@ import os.path as osp
 import pickle
 import sys
 
-import matplotlib.pyplot as plt
+import h5py
+import numpy as np
 from PIL import Image
 from torchvision import transforms
 from tqdm import trange
-import numpy as np
-import h5py
+
 sys.path.insert(0, osp.abspath('..'))
 import torch
 import yaml
@@ -293,6 +293,8 @@ class StateCLEVR(Dataset):
         return self.x[idx], self.y[idx]
 
 
+
+
 class ImageCLEVR(Dataset):
     """CLEVR dataset made from Images."""
 
@@ -441,14 +443,6 @@ class ImageCLEVR_HDF5(Dataset):
         answer = self.y[idx]
 
         return {'image': image, 'question': question}, answer
-
-
-
-
-
-
-
-
 
 # import matplotlib.pyplot as plt
 # with open('../config.yaml', 'r') as fin:
