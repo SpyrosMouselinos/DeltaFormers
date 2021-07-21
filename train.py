@@ -227,7 +227,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
     total_loss = 0.
     total_acc = 0.
-    best_val_loss = 1000
+    best_val_acc = -1
     overfit_count = -3
     log_interval = config['log_every']
     running_train_batch_index = 0
@@ -256,10 +256,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                                               val_batch_index + 1),
                                                                                       total_val_acc / (
                                                                                               val_batch_index + 1)))
-                if total_val_loss / (val_batch_index + 1) < best_val_loss:
-                    best_val_loss = total_val_loss / (val_batch_index + 1)
+                if total_val_acc / (val_batch_index + 1) > best_val_acc:
+                    best_val_acc = total_val_acc / (val_batch_index + 1)
                     _print("Saving Model...")
-                    save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_loss,
+                    save_all(model, optimizer, scheduler, bs_scheduler, epoch, best_val_acc,
                              f'./results/{experiment_name}')
                     if osp.exists(f'./results/{experiment_name}/mos_epoch_{epoch}.pt'):
                         _print("Model saved successfully!\n")
@@ -270,7 +270,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                 else:
                     overfit_count += 1
                     if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
-                        _print(f"Training stopped at epoch: {epoch} and best validation loss: {best_val_loss}")
+                        _print(f"Training stopped at epoch: {epoch} and best validation acc: {best_val_acc}")
                         return
                 model.train()
 
