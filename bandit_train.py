@@ -124,6 +124,7 @@ class ContextualStatefulBandit:
         self.testbed_model = testbed_model
         self.testbed_model.eval()
         self.augmentation_strength = augmentation_strength
+        self.compensation_for_state_scale = 3
         # if confusion_model is None:
         #     self.confusion_model = self.testbed_model
         # else:
@@ -171,7 +172,7 @@ class ContextualStatefulBandit:
             [1, -1, 0.0],
             [1, 0, 0.0],
             [1, 1, 0.0]
-        ]) * self.augmentation_strength
+        ]) * self.augmentation_strength / self.compensation_for_state_scale
         po = perturbation_options.repeat(10, 0)
         po = np.concatenate([po, np.stack([pos_embeddings] * 8).reshape(80, 9)], 1)
         po = np.expand_dims(po, 0).repeat(self.T, 0)
@@ -377,7 +378,7 @@ def neuralUCBexperiment(args):
 
     with open('./results_neuralucb.log', 'w+') as fout:
         ### Experiment 1 ###
-        train_duration = 500  # X Batch Size = 128_000
+        train_duration = 50  # X Batch Size = 128_000
         test_duration = 5000  # X 1 = 5000
         cls = ContextualStatefulBandit(model, loader, BATCH_SIZE, 80, None, augmentation_strength=1.0)
         gg = NeuralUCB(cls,
