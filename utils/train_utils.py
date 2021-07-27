@@ -247,6 +247,7 @@ class StateCLEVR(Dataset):
 
     def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None,
                  use_cache=False, return_program=False):
+        self.return_program = return_program
         if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
             with open(f'{scenes_path}/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
@@ -256,7 +257,7 @@ class StateCLEVR(Dataset):
             self.a2index = info['a2index']
             self.x = info['x']
             self.y = info['y']
-            self.return_program = return_program
+
             if self.return_program:
                 try:
                     self.p = info['p']
