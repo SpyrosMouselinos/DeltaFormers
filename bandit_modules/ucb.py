@@ -17,6 +17,7 @@ class UCB(abc.ABC):
                  delta=0.1,
                  train_every=1,
                  throttle=int(100),
+                 mock_reset=False
                  ):
         # bandit object, contains features and generated rewards
         self.bandit = bandit
@@ -34,7 +35,7 @@ class UCB(abc.ABC):
 
         # throttle tqdm updates
         self.throttle = throttle
-
+        self.mock_reset = mock_reset
         self.reset()
 
     def reset_upper_confidence_bounds(self):
@@ -126,6 +127,10 @@ class UCB(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def save(self,postfix=''):
+        pass
+
     def evaluate_confidence_bounds(self, features):
         """Update confidence bounds and related quantities for all arms.
         """
@@ -167,14 +172,14 @@ class UCB(abc.ABC):
             self.A_inv[self.action]
         )
 
-    def run(self, epochs=10):
+    def run(self, epochs=10, save_every_epochs=1000, postfix=''):
         """Run an episode of bandit.
         """
-        postfix = {
+        tqpostfix = {
             'Batches': 0.0,
             'Epochs': 0.0,
         }
-        with tqdm(total=epochs * self.bandit.T, postfix=postfix) as pbar:
+        with tqdm(total=epochs * self.bandit.T, postfix=tqpostfix) as pbar:
             for epoch in range(epochs):
                 for t in range(self.bandit.T):
                     self.update_confidence_bounds()
@@ -187,10 +192,12 @@ class UCB(abc.ABC):
                     self.iteration += 1
                     # get next batch
                 self.bandit.reset()
-                postfix['Batches'] = (epoch + 1) * self.bandit.T
-                postfix['Epochs'] = epoch
-                pbar.set_postfix(postfix)
+                tqpostfix['Batches'] = (epoch + 1) * self.bandit.T
+                tqpostfix['Epochs'] = epoch
+                pbar.set_postfix(tqpostfix)
                 pbar.update(self.bandit.T)
+                if epoch % save_every_epochs == 0 and epoch > 0:
+                    self.save(postfix=postfix)
 
     def test(self, features):
         """

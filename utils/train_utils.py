@@ -124,6 +124,7 @@ def single_scene_translator(scene: dict, translation: dict):
 def single_question_parser(question: dict, word_replace_dict: dict, q2index: dict, a2index: dict):
     image_index = question['image_index']
     q = str(question['question'])
+    p = question['program']
     a = str(question['answer'])
     if word_replace_dict is None:
         pass
@@ -150,7 +151,7 @@ def single_question_parser(question: dict, word_replace_dict: dict, q2index: dic
     else:
         a = torch.LongTensor([a2index[a] - 4])
 
-    return image_index, len(tokenized_q), q, a
+    return image_index, len(tokenized_q), q, a, p
 
 
 def scene_image_matcher(split, translation, q2index, a2index, scenes_path='data/', questions_path='data/'):
@@ -162,16 +163,17 @@ def scene_image_matcher(split, translation, q2index, a2index, scenes_path='data/
 
     x_samples = []
     y_samples = []
+    p_samples = []
     question_counter = 0
     for scene_counter in trange(len(scenes)):
         image_index_scene, n_objects, object_positions, object_colors, object_shapes, object_materials, object_sizes = \
             single_scene_translator(scene=scenes[scene_counter], translation=translation)
         while question_counter < len(questions):
-            image_index_question, n_tokens, q, a = single_question_parser(questions[question_counter],
-                                                                          word_replace_dict={'True': 'yes',
-                                                                                             'False': 'no'},
-                                                                          q2index=q2index,
-                                                                          a2index=a2index)
+            image_index_question, n_tokens, q, a, p = single_question_parser(questions[question_counter],
+                                                                             word_replace_dict={'True': 'yes',
+                                                                                                'False': 'no'},
+                                                                             q2index=q2index,
+                                                                             a2index=a2index)
             # Bad question Move on #
             if q is None and a is None:
                 question_counter += 1
@@ -191,13 +193,13 @@ def scene_image_matcher(split, translation, q2index, a2index, scenes_path='data/
                                   'question': q,
                                   })
                 y_samples.append(a)
-
+                p_samples.append(p)
                 # Increment and Loop #
                 question_counter += 1
             else:
                 # Question is for the next image #
                 break
-    return x_samples, y_samples
+    return x_samples, y_samples, p_samples
 
 
 def visual_image_matcher(split, q2index, a2index, clvr_path='data/', questions_path='data/'):
@@ -244,7 +246,7 @@ class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
     def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None,
-                 use_cache=False):
+                 use_cache=False, return_program=False):
         if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
             with open(f'{scenes_path}/{split}_dataset.pt', 'rb')as fin:
                 info = pickle.load(fin)
@@ -254,6 +256,13 @@ class StateCLEVR(Dataset):
             self.a2index = info['a2index']
             self.x = info['x']
             self.y = info['y']
+            self.return_program = return_program
+            if self.return_program:
+                try:
+                    self.p = info['p']
+                except KeyError:
+                    print("Dataset loaded without program!\n")
+                    self.return_program = False
             print("Dataset loaded succesfully!\n")
         else:
             with open(osp.dirname(osp.dirname(__file__)) + '/translation_tables.yaml', 'r') as fin:
@@ -268,10 +277,11 @@ class StateCLEVR(Dataset):
             self.translation = translation
             self.q2index = q2index
             self.a2index = a2index
-            x, y = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index, scenes_path,
-                                       questions_path)
+            x, y, p = scene_image_matcher(self.split, self.translation, self.q2index, self.a2index, scenes_path,
+                                          questions_path)
             self.x = x
             self.y = y
+            self.p = p
             print("Dataset loaded succesfully!...Saving\n")
             info = {
                 'split': self.split,
@@ -279,10 +289,20 @@ class StateCLEVR(Dataset):
                 'q2index': self.q2index,
                 'a2index': self.a2index,
                 'x': self.x,
-                'y': self.y
+                'y': self.y,
+                'p': self.p
             }
             with open(f'{scenes_path}/{self.split}_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
+
+        ### Rectify Programs ###
+        new_p = []
+        padding = 'P'
+        for entry in self.p:
+            entry = str(entry)
+            new_entry = padding * (2500 - len(entry)) + entry
+            new_p.append(new_entry)
+        self.p = new_p
 
     def __len__(self):
         return len(self.x)
@@ -290,9 +310,10 @@ class StateCLEVR(Dataset):
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        return self.x[idx], self.y[idx]
-
-
+        if self.return_program:
+            return self.x[idx], self.y[idx], self.p[idx]
+        else:
+            return self.x[idx], self.y[idx]
 
 
 class ImageCLEVR(Dataset):
