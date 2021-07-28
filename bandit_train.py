@@ -446,8 +446,8 @@ def linUCBexperiment(args):
 
     with open(f'./results_linucb_{args.scale}.log', 'w+') as fout:
         ### Experiment 1 ###
-        train_duration = 500  # X 256 = 149_000
-        test_duration = 5000  # X 1 = 5000
+        train_duration = 400  # X 256 = 149_000
+        test_duration = 10_000  # X 1 = 5000
         cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
                                        confusion_model=None, augmentation_strength=args.scale)
         gg = LinUCB(cls,
@@ -457,7 +457,7 @@ def linUCBexperiment(args):
                     save_path='./results/experiment_linucb/'
                     )
 
-        gg.run(epochs=train_duration, save_every_epochs=100, postfix=f'scale_{args.scale}')
+        gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
 
         test_loader_iter = iter(test_loader)
         example_index = 0
@@ -541,7 +541,7 @@ def linUCBexperiment_test(args):
                                    scenes_path=args.scenes_path, questions_path=args.questions_path,
                                    clvr_path=args.clvr_path,
                                    use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
-    test_duration = 10000  # X 1 = 10_000
+    test_duration = 10_000  # X 1 = 10_000
 
     if args.scale == 1 or args.scale == 1.0:
         scale = 1.0
@@ -591,7 +591,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear')
-    parser.add_argument('--scale', type=float, help='scale of arguments', default=0.1)
+    parser.add_argument('--scale', type=float, help='scale of arguments', default=1.0)
     # parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()
 
