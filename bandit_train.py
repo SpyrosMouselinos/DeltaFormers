@@ -180,8 +180,19 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
     model = AVAILABLE_MODELS[config['model_architecture']](config)
     _print(f"Loading Model of type: {config['model_architecture']}\n")
+    model = load(path=load_from, model=model)
     model = model.to(device)
     model.eval()
+
+    config_fool = f'./results/experiment_linear_sq/config.yaml'
+    with open(config_fool, 'r') as fin:
+        config_fool = yaml.load(fin, Loader=yaml.FullLoader)
+
+    model_fool = AVAILABLE_MODELS[config_fool['model_architecture']](config_fool)
+    _print(f"Loading Model of type: {config_fool['model_architecture']}\n")
+    model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
+    model_fool = model_fool.to(device)
+    model_fool.eval()
 
     val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
                                                                   clvr_path=clvr_path,
@@ -192,9 +203,8 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
                                                  num_workers=0, shuffle=True, drop_last=True)
 
-    model = load(path=load_from, model=model)
     _print(f"Loader has : {len(val_dataloader)} batches\n")
-    return model, val_dataloader
+    return model, model_fool, val_dataloader
 
 
 def get_test_loader(load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/'):
@@ -229,11 +239,11 @@ class ContextualStatefulBandit:
         self.testbed_model.eval()
         self.augmentation_strength = augmentation_strength
         self.compensation_for_state_scale = 3
-        # if confusion_model is None:
-        #     self.confusion_model = self.testbed_model
-        # else:
-        #     self.confusion_model = confusion_model
-        #     self.confusion_model.eval()
+        if confusion_model is None:
+            self.confusion_model = self.testbed_model
+        else:
+            self.confusion_model = confusion_model
+            self.confusion_model.eval()
         self.testbed_loader = testbed_loader
         self.testbed_loader_iter = iter(testbed_loader)
         self.T = T
@@ -313,49 +323,103 @@ class ContextualStatefulBandit:
         self.n_features = self.features.shape[-1]
         return self.features
 
-    def alter_data(self, options='position'):
+    def alter_data(self, specific_action=None):
         # Take self.data, alter them and forward pass again to get rewards #
-        arm_predictions = []
-        arm_validity = []
-        programs = translate_str_program(self.programs)
-        for object_index in range(0, 10):
-            for perturbation_index in range(0, 8):
-                self_data = copy.deepcopy(self.data)
-                object_positions = copy.deepcopy(self.data['object_positions'])
-                object_positions[:, object_index] += torch.FloatTensor(
-                    np.expand_dims(self.perturbation_options[perturbation_index], 0).repeat(self.T, 0))
+        if specific_action is None:
+            arm_predictions_after = []
+            arm_validity = []
+            arm_predictions_before = self.confusion_model(**kwarg_dict_to_device(self.data, self.device))[
+                0].detach().cpu().argmax(1)
+            programs = translate_str_program(self.programs)
+            for object_index in range(0, 10):
+                for perturbation_index in range(0, 8):
+                    self_data = copy.deepcopy(self.data)
+                    object_positions = copy.deepcopy(self.data['object_positions'])
+                    object_positions[:, object_index] += torch.FloatTensor(
+                        np.expand_dims(self.perturbation_options[perturbation_index], 0).repeat(self.T, 0))
 
-                self_data['object_positions'] = object_positions
-                scene = translate_state(self_data)
-                res = self.oracle(programs, scene, None)
-                res = translate_answer(res)
-                arm_predictions.append(
-                    self.testbed_model(**kwarg_dict_to_device(self_data, self.device))[0].detach().cpu().argmax(1))
-                arm_validity.append(res)
+                    self_data['object_positions'] = object_positions
+                    scene = translate_state(self_data)
+                    res = self.oracle(programs, scene, None)
+                    res = translate_answer(res)
+                    arm_predictions_after.append(
+                        self.confusion_model(**kwarg_dict_to_device(self_data, self.device))[0].detach().cpu().argmax(
+                            1))
+                    arm_validity.append(res)
 
-        return arm_predictions, arm_validity
+            return arm_predictions_after, arm_predictions_before, arm_validity
+        else:
+            arm_predictions_after = []
+            arm_validity = []
+            arm_predictions_before = self.confusion_model(**kwarg_dict_to_device(self.data, self.device))[
+                0].detach().cpu().argmax(1)
+            programs = translate_str_program(self.programs)
+            object_index, perturbation_index = specific_action // 8, specific_action % 8
+            self_data = copy.deepcopy(self.data)
+            object_positions = copy.deepcopy(self.data['object_positions'])
+            object_positions[:, object_index] += torch.FloatTensor(
+                np.expand_dims(self.perturbation_options[perturbation_index], 0).repeat(self.T, 0))
 
-    def reset_rewards(self):
+            self_data['object_positions'] = object_positions
+            scene = translate_state(self_data)
+            res = self.oracle(programs, scene, None)
+            res = translate_answer(res)
+            arm_predictions_after.append(
+                self.confusion_model(**kwarg_dict_to_device(self_data, self.device))[0].detach().cpu().argmax(
+                    1))
+            arm_validity.append(res)
+
+            return arm_predictions_after, arm_predictions_before, arm_validity
+
+    def reset_rewards(self, specific_action=None):
         """Generate rewards for each arm and each round,
         following the reward function h + Gaussian noise.
         """
-        self.rewards = np.zeros((self.T, self.n_arms))
-        arm_predictions, arm_validity = self.alter_data()
-        arm_predictions = torch.stack(arm_predictions, dim=1).long()
-        if self.T > 1:
-            arm_validity = [torch.LongTensor(f) for f in arm_validity]
-        answer_stayed_the_same = self.answers - torch.stack(arm_validity, dim=1).long()
-        answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0)
-        # Loss Rule #
-        # 0) If we had a correct answer in the first place and is now false -> Reward 1
-        # 1) If we had a correct answer in the first place and it is still correct -> Reward 0
-        # 2) If we had a false answer in the first place -> Reward 0
-        # 3) If the state is invalid - Reward - 1
-        # for i in range(0, self.n_arms):
-        #     self.rewards[:, i] = 1 - ((self.answers.squeeze(1) - arm_predictions[i]).eq(0) * 1.0).numpy()
-        self.rewards = (answer_stayed_the_same * (1.0 - 1.0 * (self.answers - arm_predictions).eq(0))).numpy()
-        # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
-        return self.rewards
+        if specific_action is None:
+            self.rewards = np.zeros((self.T, self.n_arms))
+            arm_predictions_after, arm_predictions_before, arm_validity = self.alter_data(specific_action=None)
+            arm_predictions_before = arm_predictions_before.unsqueeze(1)
+            arm_predictions_after = torch.stack(arm_predictions_after, dim=1).long()
+            if self.T > 1:
+                arm_validity = [torch.LongTensor(f) for f in arm_validity]
+            answer_stayed_the_same = self.answers - torch.stack(arm_validity, dim=1).long()
+            answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0)
+            model_answered_correctly = self.answers - arm_predictions_before
+            model_answered_correctly = 1.0 * model_answered_correctly.eq(0)
+            # Loss Rule #
+            # 0) If we had a correct answer in the first place and is now false -> Reward 1
+            # 1) If we had a correct answer in the first place and it is still correct -> Reward 0
+            # 2) If we had a false answer in the first place -> Reward 0
+            # 3) If the state is invalid - Reward - 1
+            # for i in range(0, self.n_arms):
+            #     self.rewards[:, i] = 1 - ((self.answers.squeeze(1) - arm_predictions[i]).eq(0) * 1.0).numpy()
+            self.rewards = (model_answered_correctly * answer_stayed_the_same * (
+                    1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
+            # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
+            return self.rewards
+        else:
+            self.rewards = np.zeros((self.T, 1))
+            arm_predictions_after, arm_predictions_before, arm_validity = self.alter_data(
+                specific_action=specific_action)
+            arm_predictions_before = arm_predictions_before.unsqueeze(1)
+            arm_predictions_after = torch.stack(arm_predictions_after, dim=1).long()
+            if self.T > 1:
+                arm_validity = [torch.LongTensor(f) for f in arm_validity]
+            answer_stayed_the_same = self.answers - torch.stack(arm_validity, dim=1).long()
+            answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0)
+            model_answered_correctly = self.answers - arm_predictions_before
+            model_answered_correctly = 1.0 * model_answered_correctly.eq(0)
+            # Loss Rule #
+            # 0) If we had a correct answer in the first place and is now false -> Reward 1
+            # 1) If we had a correct answer in the first place and it is still correct -> Reward 0
+            # 2) If we had a false answer in the first place -> Reward 0
+            # 3) If the state is invalid - Reward - 1
+            # for i in range(0, self.n_arms):
+            #     self.rewards[:, i] = 1 - ((self.answers.squeeze(1) - arm_predictions[i]).eq(0) * 1.0).numpy()
+            self.rewards = (model_answered_correctly * answer_stayed_the_same * (
+                    1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
+            # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
+            return self.rewards
 
     def _seed(self, seed=None):
         if seed is not None:
@@ -372,10 +436,10 @@ def linUCBexperiment(args):
     else:
         os.mkdir(f'./results/experiment_linucb')
     T = 256
-    model, loader = get_fool_model(device=args.device, load_from=args.load_from,
-                                   scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                   clvr_path=args.clvr_path,
-                                   use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
+    model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
+                                               scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                               clvr_path=args.clvr_path,
+                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
     test_loader = get_test_loader(load_from=args.load_from,
                                   scenes_path=args.scenes_path, questions_path=args.questions_path,
                                   clvr_path=args.clvr_path)
@@ -387,7 +451,7 @@ def linUCBexperiment(args):
         cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
                                        confusion_model=None, augmentation_strength=args.scale)
         gg = LinUCB(cls,
-                    reg_factor=1.0,
+                    reg_factor=1,
                     delta=0.1,
                     confidence_scaling_factor=1.0,
                     save_path='./results/experiment_linucb/'
@@ -402,16 +466,16 @@ def linUCBexperiment(args):
             try:
                 goo = next(test_loader_iter)
                 test_features = cls.reset_features(goo)
-                test_rewards = cls.reset_rewards()
                 ucb, _, action = gg.test(test_features)
-                accuracy_drop += max(0, test_rewards[0, action])
+                test_rewards = cls.reset_rewards(specific_action=action)
+                accuracy_drop += max(0, test_rewards[0][0])
                 example_index += 1
                 if example_index % 100 == 0 and example_index > 0:
-                    print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+                    _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
             except StopIteration:
                 break
-        print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / test_duration)}%")
-        fout.write(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / test_duration)}%\n")
+        _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+        fout.write(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%\n")
 
 
 def neuralUCBexperiment(args):
@@ -472,16 +536,12 @@ def linUCBexperiment_test(args):
     else:
         os.mkdir(f'./results/experiment_linucb')
 
-    T = 256
-    model, loader = get_fool_model(device=args.device, load_from=args.load_from,
+    T = 1
+    model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                    scenes_path=args.scenes_path, questions_path=args.questions_path,
                                    clvr_path=args.clvr_path,
                                    use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
-    test_loader = get_test_loader(load_from=args.load_from,
-                                  scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                  clvr_path=args.clvr_path)
-
-    test_duration = 5000  # X 1 = 5000
+    test_duration = 10000  # X 1 = 10_000
 
     if args.scale == 1 or args.scale == 1.0:
         scale = 1.0
@@ -502,7 +562,7 @@ def linUCBexperiment_test(args):
                 load_from=f'./results/experiment_linucb/linucb_model_scale_{scale_name}.pt'
                 )
 
-    test_loader_iter = iter(test_loader)
+    test_loader_iter = iter(loader)
     example_index = 0
     accuracy_drop = 0.0
     while example_index < test_duration:
@@ -514,10 +574,10 @@ def linUCBexperiment_test(args):
             accuracy_drop += max(0, test_rewards[0, action])
             example_index += 1
             if example_index % 100 == 0 and example_index > 0:
-                print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+                _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
         except StopIteration:
             break
-    print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+    _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
 
 
 if __name__ == '__main__':
@@ -530,9 +590,9 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear_test')
+    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear')
     parser.add_argument('--scale', type=float, help='scale of arguments', default=0.1)
-    #parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
+    # parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()
 
     if args.use_cache == 0:
