@@ -135,17 +135,9 @@ class UCB(abc.ABC):
         """Update confidence bounds and related quantities for all arms.
         """
         self.evaluate_output_gradient(features)
-
-        # UCB exploration bonus
-        self.exploration_bonus = np.array(
-            [
-                self.confidence_multiplier * np.sqrt(
-                    np.dot(self.grad_approx[a], np.dot(self.A_inv[a], self.grad_approx[a].T))) for a in self.bandit.arms
-            ]
-        )
         self.evaluate(features)
         # estimated combined bound for reward
-        self.upper_confidence_bounds = self.mu_hat + self.exploration_bonus
+        self.upper_confidence_bounds = self.mu_hat
 
     def update_confidence_bounds(self):
         """Update confidence bounds and related quantities for all arms.

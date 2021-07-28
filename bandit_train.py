@@ -515,10 +515,9 @@ def linUCBexperiment_test(args):
             example_index += 1
             if example_index % 100 == 0 and example_index > 0:
                 print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
-                break
         except StopIteration:
             break
-    print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / test_duration)}%")
+    print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
 
 
 if __name__ == '__main__':
@@ -531,8 +530,8 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear')
-    parser.add_argument('--scale', type=float, help='scale of arguments', default=1.0)
+    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear_test')
+    parser.add_argument('--scale', type=float, help='scale of arguments', default=0.1)
     #parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()
 
