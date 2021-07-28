@@ -354,7 +354,7 @@ class ContextualStatefulBandit:
         # for i in range(0, self.n_arms):
         #     self.rewards[:, i] = 1 - ((self.answers.squeeze(1) - arm_predictions[i]).eq(0) * 1.0).numpy()
         self.rewards = (answer_stayed_the_same * (1.0 - 1.0 * (self.answers - arm_predictions).eq(0))).numpy()
-                       #+ ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
+        # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
         return self.rewards
 
     def _seed(self, seed=None):
@@ -456,7 +456,7 @@ def neuralUCBexperiment(args):
                 test_features = cls.reset_features(goo)
                 test_rewards = cls.reset_rewards()
                 ucb, _, action = gg.test(test_features)
-                accuracy_drop += max(0,test_rewards[0, action])
+                accuracy_drop += max(0, test_rewards[0, action])
                 example_index += 1
                 if example_index % 5 == 0 and example_index > 0:
                     print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
@@ -465,6 +465,60 @@ def neuralUCBexperiment(args):
         print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / test_duration)}%")
         fout.write(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / test_duration)}%\n")
 
+
+def linUCBexperiment_test(args):
+    if osp.exists(f'./results/experiment_linucb'):
+        pass
+    else:
+        os.mkdir(f'./results/experiment_linucb')
+
+    T = 256
+    model, loader = get_fool_model(device=args.device, load_from=args.load_from,
+                                   scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                   clvr_path=args.clvr_path,
+                                   use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
+    test_loader = get_test_loader(load_from=args.load_from,
+                                  scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                  clvr_path=args.clvr_path)
+
+    test_duration = 5000  # X 1 = 5000
+
+    if args.scale == 1 or args.scale == 1.0:
+        scale = 1.0
+        scale_name = '1.0'
+    elif args.scale == 0.5:
+        scale = 0.5
+        scale_name = '0.5'
+    elif args.scale == 0.1:
+        scale = 0.1
+        scale_name = '0.1'
+    cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
+                                   confusion_model=None, augmentation_strength=scale)
+    gg = LinUCB(cls,
+                reg_factor=1.0,
+                delta=0.1,
+                confidence_scaling_factor=1.0,
+                save_path='./results/experiment_linucb/',
+                load_from=f'./results/experiment_linucb/linucb_model_scale_{scale_name}.pt'
+                )
+
+    test_loader_iter = iter(test_loader)
+    example_index = 0
+    accuracy_drop = 0.0
+    while example_index < test_duration:
+        try:
+            goo = next(test_loader_iter)
+            test_features = cls.reset_features(goo)
+            test_rewards = cls.reset_rewards()
+            ucb, _, action = gg.test(test_features)
+            accuracy_drop += max(0, test_rewards[0, action])
+            example_index += 1
+            if example_index % 100 == 0 and example_index > 0:
+                print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+                break
+        except StopIteration:
+            break
+    print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / test_duration)}%")
 
 
 if __name__ == '__main__':
@@ -477,8 +531,9 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='neural')
+    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear')
     parser.add_argument('--scale', type=float, help='scale of arguments', default=1.0)
+    #parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()
 
     if args.use_cache == 0:
@@ -493,5 +548,7 @@ if __name__ == '__main__':
 
     if args.mode == 'linear':
         linUCBexperiment(args)
-    else:
+    elif args.mode == ' neural':
         neuralUCBexperiment(args)
+    elif args.mode == 'linear_test':
+        linUCBexperiment_test(args)
