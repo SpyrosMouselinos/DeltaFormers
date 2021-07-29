@@ -2,9 +2,17 @@ import numpy as np
 import torch
 import os
 import pickle
+from numba import jit
 import torch.nn as nn
 from .ucb import UCB
 from .utils import Model
+
+@jit(nopython=True)
+def calc_confidence_multiplier(confidence_scaling_factor, approximator_dim, iteration, bound_features,
+                               reg_factor, delta):
+    return confidence_scaling_factor * np.sqrt(approximator_dim * np.log(
+        1 + iteration * bound_features ** 2 / (reg_factor * approximator_dim)) + 2 * np.log(1 / delta))
+
 
 
 class NeuralUCB(UCB):
@@ -22,11 +30,13 @@ class NeuralUCB(UCB):
                  learning_rate=0.01,
                  epochs=1,
                  train_every=1,
-                 throttle=1,
                  save_path=None,
-                 load_from=None
+                 load_from=None,
+                 guide_for=0
                  ):
+        self.iteration = 0
         self.save_path = save_path
+        self.rhs = np.sqrt(self.hidden_size)
         if load_from is None:
             # hidden size of the NN layers
             self.hidden_size = hidden_size
@@ -40,7 +50,7 @@ class NeuralUCB(UCB):
             self.learning_rate = learning_rate
             self.epochs = epochs
 
-            self.device = torch.device('cuda' if torch.cuda.is_available()  else 'cpu')
+            self.device = 'cpu'#torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
             # dropout rate
             self.p = p
@@ -51,6 +61,8 @@ class NeuralUCB(UCB):
                                n_layers=self.n_layers,
                                p=self.p
                                ).to(self.device)
+
+
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
             # maximum L2 norm for the features across all arms and all rounds
@@ -60,34 +72,14 @@ class NeuralUCB(UCB):
                              reg_factor=reg_factor,
                              confidence_scaling_factor=confidence_scaling_factor,
                              delta=delta,
-                             throttle=throttle,
                              train_every=train_every,
+                             guide_for=guide_for
                              )
         else:
             raise NotImplementedError
 
     def save(self, postfix=''):
         return
-    # def save(self, postfix=''):
-    #     if self.save_path is None:
-    #         print("Save path is empty...saving here\n")
-    #         self.save_path = './'
-    #     state_dict = {
-    #         'reg_factor': self.reg_factor,
-    #         'delta': self.delta,
-    #         'bound_theta': self.bound_theta,
-    #         'confidence_scaling_factor': self.confidence_scaling_factor,
-    #         'A_inv': self.A_inv,
-    #         'theta': self.theta,
-    #         'b': self.b,
-    #         'iteration': self.iteration,
-    #     }
-    #     with open(self.save_path + f'/linucb_model_{postfix}.pt', 'wb') as f:
-    #         pickle.dump(state_dict, f)
-    #
-    #     if os.path.exists(self.save_path + f'/linucb_model_{postfix}.pt'):
-    #         print("Model Saved Succesfully!")
-    #     return
 
     @property
     def approximator_dim(self):
@@ -99,6 +91,7 @@ class NeuralUCB(UCB):
 
     def update_output_gradient(self):
         """Get gradient of network prediction w.r.t network weights.
+            Gradient for each arm.
         """
         for a in self.bandit.arms:
             x = torch.FloatTensor(
@@ -110,7 +103,7 @@ class NeuralUCB(UCB):
             y.backward()
 
             self.grad_approx[a] = torch.cat(
-                [w.grad.detach().cpu().flatten() / np.sqrt(self.hidden_size) for w in self.model.parameters() if w.requires_grad]
+                [w.grad.detach().cpu().flatten() / self.rhs for w in self.model.parameters() if w.requires_grad]
             ).numpy()
 
     def evaluate_output_gradient(self, features):
@@ -126,36 +119,32 @@ class NeuralUCB(UCB):
             y.backward()
 
             self.grad_approx[a] = torch.cat(
-                [w.grad.detach().cpu().flatten() / np.sqrt(self.hidden_size) for w in self.model.parameters() if w.requires_grad]
+                [w.grad.detach().cpu().flatten() / self.rhs for w in self.model.parameters() if w.requires_grad]
             ).numpy()
 
     def reset(self):
-        """Reset the internal estimates.
+        """Return the internal estimates.
+            Initialize SINGLE PREDICTOR NN.
+            REMEMBER TO USE ONLY THE FIRST A_INV
         """
         self.reset_upper_confidence_bounds()
         self.reset_actions()
         self.reset_A_inv()
         self.reset_grad_approx()
-        self.iteration = 0
+
 
 
     @property
     def confidence_multiplier(self):
-        """NeuralUCB confidence interval multiplier.
+        """Confidence interval multiplier.
         """
-        return (
-            self.confidence_scaling_factor
-            * np.sqrt(
-                self.approximator_dim
-                * np.log(
-                    1 + self.iteration * self.bound_features ** 2 / (self.reg_factor * self.approximator_dim)
-                    ) + 2 * np.log(1 / self.delta)
-                )
-            )
+        return calc_confidence_multiplier(self.confidence_scaling_factor, self.approximator_dim, self.iteration,
+                                               self.bound_features, self.reg_factor, self.delta)
 
 
     def train(self):
-        """Train neural approximator.
+        """
+            Train neural approximator.
         """
         iterations_so_far = range(np.max([0, (self.iteration % self.bandit.T) - self.training_window]), (self.iteration % self.bandit.T)+1)
         actions_so_far = self.actions[np.max([0, (self.iteration % self.bandit.T) - self.training_window]):(self.iteration % self.bandit.T)+1]

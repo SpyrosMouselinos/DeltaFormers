@@ -16,7 +16,7 @@ import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5
-from bandit_modules.linucb import LinUCB
+from bandit_modules.new_linucb import LinUCB
 from bandit_modules.neuralucb import NeuralUCB
 from oracle.Oracle_CLEVR import Oracle
 
@@ -255,7 +255,6 @@ class ContextualStatefulBandit:
         # Generate features from testbed model's pre-ultimate layer
         self.reset()
 
-
     @property
     def arms(self):
         """Return [0, ...,n_arms-1]
@@ -320,7 +319,7 @@ class ContextualStatefulBandit:
             y_preds, _, y_feats = self.testbed_model(**data)
             self.initial_predictions = y_preds.detach().cpu().argmax(1)
 
-        self.internal_dataset['X_scenes'].append(y_feats.cpu().numpy())
+        #self.internal_dataset['X_scenes'].append(y_feats.cpu().numpy())
         self.features = y_feats.cpu().unsqueeze(1).numpy().repeat(self.n_arms, 1)
         self.po, self.perturbation_options = self.create_arm_augmentation_vectors()
         self.features = np.concatenate([self.features, self.po], axis=-1)
@@ -403,19 +402,19 @@ class ContextualStatefulBandit:
                     1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
             # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
 
-            self.internal_dataset['Y_rewards'].append(np.argmax(self.rewards, 1))
-            self.internal_dataset['Y_values'].append(np.max(self.rewards, 1))
-            if len(self.internal_dataset['Y_values']) >= 20:
-                path_id = 0
-                path = f'./results/data_lin_part_{path_id}.pt'
-                while os.path.exists(path):
-                    path_id += 1
-                    path = f'./results/data_lin_part_{path_id}.pt'
-
-                with open(path, 'wb') as f:
-                    pickle.dump(self.internal_dataset, f)
-                del self.internal_dataset
-                self.internal_dataset = {'X_scenes': [], 'Y_rewards': [], 'Y_values': []}
+            #self.internal_dataset['Y_rewards'].append(np.argmax(self.rewards, 1))
+            #self.internal_dataset['Y_values'].append(np.max(self.rewards, 1))
+            # if len(self.internal_dataset['Y_values']) >= 20:
+            #     path_id = 0
+            #     path = f'./results/data_lin_part_{path_id}.pt'
+            #     while os.path.exists(path):
+            #         path_id += 1
+            #         path = f'./results/data_lin_part_{path_id}.pt'
+            #
+            #     with open(path, 'wb') as f:
+            #         pickle.dump(self.internal_dataset, f)
+            #     del self.internal_dataset
+            #     self.internal_dataset = {'X_scenes': [], 'Y_rewards': [], 'Y_values': []}
             return self.rewards
         else:
             self.rewards = np.zeros((self.T, 1))
@@ -451,6 +450,77 @@ class ContextualStatefulBandit:
             torch.cuda.manual_seed_all(seed)
 
 
+class TestStatefulBandit:
+    def __init__(self, T):
+        self.T = T
+        self.n_arms = 80
+        self.thetas = np.random.uniform(-1, 1, size=(32,))
+        self.reset()
+
+    @property
+    def arms(self):
+        """Return [0, ...,n_arms-1]
+        """
+        return range(self.n_arms)
+
+    def reset(self):
+        """Generate new features and new rewards.
+        """
+        self.reset_features()
+        self.reset_rewards()
+
+    def reset_T(self, bs):
+        self.T = bs
+        return
+
+    def reset_features(self):
+        """Generate random context and the rewards that accompany it
+        """
+        random_context = np.random.uniform(low=-1, high=1, size=((self.T, self.n_arms,32)))
+        self.features = random_context / np.linalg.norm(random_context, 2, 2, True)
+        self.n_features = self.features.shape[-1]
+        return self.features
+
+
+    def reset_rewards(self, specific_action=None):
+        """Generate rewards for each arm and each round,
+        following the reward function h + Gaussian noise.
+        """
+
+        self.rewards = np.zeros((self.T, self.n_arms))
+        self.rewards = self.features @ self.thetas.T
+        self.rewards = (self.rewards - self.rewards.min()) / (self.rewards.max() - self.rewards.min())
+        return self.rewards
+
+
+def testexperiment(args):
+    T = 256
+    ### Experiment 1 ###
+    train_duration = 5
+    cls = TestStatefulBandit(T=T)
+    # gg = LinUCB(cls,
+    #             reg_factor=1,
+    #             delta=0.01,
+    #             confidence_scaling_factor=0.01,
+    #             guide_for=0
+    #             )
+    #
+    # gg.run(epochs=train_duration, save_every_epochs=5000, postfix=f'test')
+
+
+    # gg = NeuralUCB(cls,
+    #                hidden_size=20,
+    #                reg_factor=1.0,
+    #                delta=0.01,
+    #                confidence_scaling_factor=0.01,
+    #                training_window=T,
+    #                p=0.2,
+    #                learning_rate=0.01,
+    #                epochs=50,
+    #                train_every= (T // 2) - 1
+    #                )
+    # gg.run(epochs=train_duration, save_every_epochs=5000, postfix=f'test_neural')
+
 
 def linUCBexperiment(args):
     if osp.exists(f'./results/experiment_linucb'):
@@ -463,25 +533,24 @@ def linUCBexperiment(args):
                                                clvr_path=args.clvr_path,
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
     test_loader = get_test_loader(load_from=args.load_from,
-                                  scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                  clvr_path=args.clvr_path)
+                                 scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                 clvr_path=args.clvr_path)
 
     with open(f'./results_linucb_{args.scale}.log', 'w+') as fout:
         ### Experiment 1 ###
-        train_duration = 50  # X 256 = 149_000
-        test_duration = 10_000  # X 1 = 5000
+        train_duration = 1500  # X 256 = 149_000
+        test_duration = 20_000  # X 1 = 20_000
         cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
                                        confusion_model=model_fool, augmentation_strength=args.scale)
         gg = LinUCB(cls,
                     reg_factor=1,
-                    delta=0.1,
-                    confidence_scaling_factor=1.0,
+                    delta=0.01,
+                    confidence_scaling_factor=0.01,
                     save_path='./results/experiment_linucb/',
-                    load_from=f'./results/experiment_linucb/linucb_model_scale_{args.scale}.pt'
+                    guide_for=600
                     )
 
         gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
-
 
         test_loader_iter = iter(test_loader)
         example_index = 0
@@ -508,29 +577,30 @@ def neuralUCBexperiment(args):
     else:
         os.mkdir(f'./results/experiment_neuralucb')
     T = 256
-    model,model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
-                                   scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                   clvr_path=args.clvr_path,
-                                   use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
+    model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
+                                               scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                               clvr_path=args.clvr_path,
+                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
     test_loader = get_test_loader(load_from=args.load_from,
                                   scenes_path=args.scenes_path, questions_path=args.questions_path,
                                   clvr_path=args.clvr_path)
 
     with open(f'./results_neuralucb_{args.scale}.log', 'w+') as fout:
-        train_duration = 200  # X Batch Size = 128_000
-        test_duration = 5000  # X 1 = 5000
+        train_duration = 500  # X Batch Size = 128_000
+        test_duration = 20_000  # X 1 = 20_000
         cls = ContextualStatefulBandit(model, loader, T, 80, model_fool, augmentation_strength=args.scale)
         gg = NeuralUCB(cls,
                        hidden_size=20,
                        reg_factor=1.0,
-                       delta=0.1,
-                       confidence_scaling_factor=1.0,
-                       training_window=T // 2,
+                       delta=0.01,
+                       confidence_scaling_factor=0.01,
+                       training_window=T,
                        p=0.2,
                        learning_rate=0.01,
                        epochs=50,
-                       train_every=(T // 4) - 1,
-                       save_path='./results/experiment_neuralucb/'
+                       train_every=(T // 2) - 1,
+                       save_path='./results/experiment_neuralucb/',
+                       guide_for=300
                        )
 
         gg.run(epochs=train_duration, save_every_epochs=100, postfix=f'scale_{args.scale}')
@@ -546,7 +616,7 @@ def neuralUCBexperiment(args):
                 ucb, _, action = gg.test(test_features)
                 accuracy_drop += max(0, test_rewards[0, action])
                 example_index += 1
-                if example_index % 5 == 0 and example_index > 0:
+                if example_index % 100 == 0 and example_index > 0:
                     print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
             except StopIteration:
                 break
@@ -635,3 +705,5 @@ if __name__ == '__main__':
         neuralUCBexperiment(args)
     elif args.mode == 'linear_test':
         linUCBexperiment_test(args)
+    else:
+        testexperiment(args)

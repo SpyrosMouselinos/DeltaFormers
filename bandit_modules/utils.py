@@ -41,6 +41,8 @@ class Model(nn.Module):
             self.activation = nn.ReLU()
         elif activation == 'LeakyReLU':
             self.activation = nn.LeakyReLU(negative_slope=0.1)
+        elif activation == 'Tanh':
+            self.activation = nn.Tanh()
         else:
             raise Exception('{} not an available activation'.format(activation))
 

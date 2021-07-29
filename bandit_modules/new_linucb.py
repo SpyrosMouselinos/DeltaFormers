@@ -2,8 +2,16 @@ import os
 import pickle
 
 import numpy as np
+from numba import jit
 
 from .ucb import UCB
+
+
+@jit(nopython=True)
+def calc_confidence_multiplier(confidence_scaling_factor, approximator_dim, iteration, bound_features,
+                               reg_factor, delta):
+    return confidence_scaling_factor * np.sqrt(approximator_dim * np.log(
+        1 + iteration * bound_features ** 2 / (reg_factor * approximator_dim)) + 2 * np.log(1 / delta))
 
 
 class LinUCB(UCB):
@@ -17,8 +25,10 @@ class LinUCB(UCB):
                  bound_theta=1.0,
                  confidence_scaling_factor=0.0,
                  save_path=None,
-                 load_from=None
+                 load_from=None,
+                 guide_for=0,
                  ):
+        self.iteration = 0
         self.save_path = save_path
         if load_from is None:
             # range of the linear predictors
@@ -31,7 +41,8 @@ class LinUCB(UCB):
                              reg_factor=reg_factor,
                              confidence_scaling_factor=confidence_scaling_factor,
                              delta=delta,
-                             mock_reset=False
+                             mock_reset=False,
+                             guide_for=guide_for
                              )
         else:
             state_dict = self.load(load_from)
@@ -41,7 +52,8 @@ class LinUCB(UCB):
                              reg_factor=reg_factor,
                              confidence_scaling_factor=confidence_scaling_factor,
                              delta=delta,
-                             mock_reset=True
+                             mock_reset=True,
+
                              )
             self.reg_factor = state_dict['reg_factor']
             self.delta = state_dict['delta']
@@ -86,6 +98,7 @@ class LinUCB(UCB):
 
     def update_output_gradient(self):
         """For linear approximators, simply returns the features.
+        Gradient for each arm here is the same. = Input
         """
         self.grad_approx = self.bandit.features[self.iteration % self.bandit.T]
 
@@ -95,56 +108,41 @@ class LinUCB(UCB):
         self.grad_approx = features[0]
 
     def reset(self):
-        """Return the internal estimates
+        """Return the internal estimates.
+            Initialize SINGLE PREDICTOR AND SINGLE B.
+            REMEMBER TO USE ONLY THE FIRST A_INV
         """
         self.reset_upper_confidence_bounds()
         self.reset_actions()
         self.reset_grad_approx()
         if not self.mock_reset:
             self.reset_A_inv()
-            self.iteration = 0
-            # randomly initialize linear predictors within their bounds
-            self.theta = np.random.uniform(-1, 1, (self.bandit.n_arms, self.bandit.n_features)) * self.bound_theta
-            # initialize reward-weighted features sum at zero
-            self.b = np.zeros((self.bandit.n_arms, self.bandit.n_features))
+            self.theta = np.random.uniform(-1, 1, self.bandit.n_features) * self.bound_theta
+            self.b = np.zeros(self.bandit.n_features)
 
     @property
     def confidence_multiplier(self):
-        """LinUCB confidence interval multiplier.
+        """Confidence interval multiplier.
         """
-        return (
-                self.confidence_scaling_factor
-                * np.sqrt(
-            self.bandit.n_features
-            * np.log(
-                1 + self.iteration * self.bound_features ** 2 / (self.reg_factor * self.bandit.n_features)
-            ) + 2 * np.log(1 / self.delta)
-        )
-                + np.sqrt(self.reg_factor) * self.bound_theta
-        )
+        return calc_confidence_multiplier(self.confidence_scaling_factor, self.approximator_dim, self.iteration,
+                                               self.bound_features, self.reg_factor, self.delta)
 
     def predict(self):
         """Predict reward.
         """
         self.mu_hat = np.array(
             [
-                np.dot(self.bandit.features[self.iteration % self.bandit.T, a], self.theta[a]) for a in self.bandit.arms
+                np.dot(self.bandit.features[self.iteration % self.bandit.T, a], self.theta.T) for a in self.bandit.arms
             ]
         )
 
     def train(self):
         """Update linear predictor theta.
         """
-        self.theta = np.array(
-            [
-                np.matmul(self.A_inv[a], self.b[a]) for a in self.bandit.arms
-            ]
-        )
-
-        self.b[self.action] += self.bandit.features[self.iteration % self.bandit.T, self.action] * self.bandit.rewards[
+        self.b += self.bandit.features[self.iteration % self.bandit.T, self.action] * self.bandit.rewards[
             self.iteration % self.bandit.T, self.action]
 
-
+        self.theta = np.matmul(self.A_inv, self.b)
 
     def evaluate(self, features):
         self.mu_hat = np.array(

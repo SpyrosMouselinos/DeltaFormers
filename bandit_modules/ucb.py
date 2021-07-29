@@ -1,7 +1,7 @@
 import abc
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from tqdm import tqdm
 
 from .utils import inv_sherman_morrison
@@ -17,9 +17,10 @@ class UCB(abc.ABC):
                  confidence_scaling_factor=-1.0,
                  delta=0.1,
                  train_every=1,
-                 throttle=int(100),
-                 mock_reset=False
+                 mock_reset=False,
+                 guide_for=0,
                  ):
+        self.guide_for = guide_for
         # bandit object, contains features and generated rewards
         self.bandit = bandit
         # L2 regularization strength
@@ -33,9 +34,6 @@ class UCB(abc.ABC):
 
         # train approximator only every few rounds
         self.train_every = train_every
-
-        # throttle tqdm updates
-        self.throttle = throttle
         self.mock_reset = mock_reset
         self.reset()
 
@@ -55,11 +53,7 @@ class UCB(abc.ABC):
         """Initialize n_arms square matrices representing the inverses
         of exploration bonus matrices.
         """
-        self.A_inv = np.array(
-            [
-                np.eye(self.approximator_dim) / self.reg_factor for _ in self.bandit.arms
-            ]
-        )
+        self.A_inv = np.eye(self.approximator_dim) / self.reg_factor
 
     def reset_grad_approx(self):
         """Initialize the gradient of the approximator w.r.t its parameters.
@@ -85,8 +79,6 @@ class UCB(abc.ABC):
         """
         pass
 
-
-
     @property
     @abc.abstractmethod
     def confidence_multiplier(self):
@@ -94,7 +86,6 @@ class UCB(abc.ABC):
         To be defined in children classes.
         """
         pass
-
 
     def evaluate_output_gradient(self, features):
         """Compute output gradient of the approximator w.r.t its parameters.
@@ -129,7 +120,7 @@ class UCB(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def save(self,postfix=''):
+    def save(self, postfix=''):
         pass
 
     def evaluate_confidence_bounds(self, features):
@@ -149,7 +140,7 @@ class UCB(abc.ABC):
         self.exploration_bonus = np.array(
             [
                 self.confidence_multiplier * np.sqrt(
-                    np.dot(self.grad_approx[a], np.dot(self.A_inv[a], self.grad_approx[a].T))) for a in self.bandit.arms
+                    np.dot(self.grad_approx[a], np.dot(self.A_inv, self.grad_approx[a].T))) for a in self.bandit.arms
             ]
         )
 
@@ -160,9 +151,9 @@ class UCB(abc.ABC):
         self.upper_confidence_bounds = self.mu_hat + self.exploration_bonus
 
     def update_A_inv(self):
-        self.A_inv[self.action] = inv_sherman_morrison(
+        self.A_inv = inv_sherman_morrison(
             self.grad_approx[self.action],
-            self.A_inv[self.action]
+            self.A_inv
         )
 
     def run(self, epochs=10, save_every_epochs=1000, postfix=''):
@@ -177,16 +168,24 @@ class UCB(abc.ABC):
         with tqdm(total=epochs * self.bandit.T, postfix=tqpostfix) as pbar:
             for epoch in range(epochs):
                 batch_regret = np.zeros(self.bandit.T)
+                self.actions = []
                 for t in range(self.bandit.T):
                     self.update_confidence_bounds()
-                    self.action = self.sample_action()
-                    ### Calculate Regret ###
-                    best_reward = max(self.bandit.rewards[t,:])
+                    if self.guide_for > 0:
+                        self.action = np.argmax(self.bandit.rewards[t, :])
+                        self.actions.append(self.action)
+                        best_reward = max(self.bandit.rewards[t, :])
+                        if best_reward > 0:
+                            self.guide_for -= 1
+                    else:
+                        self.action = self.sample_action()
+                        self.actions.append(self.action)
+                        best_reward = max(self.bandit.rewards[t, :])
                     chosen_reward = self.bandit.rewards[t, self.action]
                     batch_regret[t] = best_reward - chosen_reward
+                    self.update_A_inv()
                     if t % self.train_every == 0 and t > 0:
                         self.train()
-                    self.update_A_inv()
                     # increment counter
                     self.iteration += 1
                     # get next batch
@@ -201,13 +200,12 @@ class UCB(abc.ABC):
                 pbar.update(self.bandit.T)
                 if epoch % save_every_epochs == 0 and epoch > 0:
                     self.save(postfix=postfix)
-        plt.figure(figsize=(10,10))
-        plt.title(f"Regret VS Epochs for LinUCB @ {self.bandit.augmentation_strength}")
+        plt.figure(figsize=(10, 10))
+        plt.title(f"Regret VS Epochs for TestUCB")
         plt.plot(regret, 'b')
         plt.ylim([0, 1])
-        plt.savefig(f'./regret_plot_{self.bandit.augmentation_strength}.png')
+        plt.savefig(f'./regret_plot_test_{np.random.randint(0, 100)}.png')
         plt.close()
-
 
     def test(self, features):
         """
