@@ -191,7 +191,7 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
     model_fool = AVAILABLE_MODELS[config_fool['model_architecture']](config_fool)
     _print(f"Loading Model of type: {config_fool['model_architecture']}\n")
-    model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
+    model_fool = load(path=f'./results/experiment_disentangled_sq/model.pt', model=model_fool)
     model_fool = model_fool.to(device)
     model_fool.eval()
 
