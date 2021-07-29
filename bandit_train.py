@@ -185,7 +185,7 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
     model = model.to(device)
     model.eval()
 
-    config_fool = f'./results/experiment_linear_sq/config.yaml'
+    config_fool = f'./results/experiment_disentangled_sq/config.yaml'
     with open(config_fool, 'r') as fin:
         config_fool = yaml.load(fin, Loader=yaml.FullLoader)
 
@@ -449,6 +449,7 @@ class ContextualStatefulBandit:
             torch.manual_seed(seed)
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
+
 
 
 def linUCBexperiment(args):
