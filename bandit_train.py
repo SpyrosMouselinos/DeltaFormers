@@ -3,6 +3,7 @@ import copy
 import json
 import os
 import os.path as osp
+import pickle
 import random
 import sys
 
@@ -250,8 +251,10 @@ class ContextualStatefulBandit:
         self.n_arms = 80
         self.device = device
         self.oracle = Oracle(metadata_path='./metadata.json')
+        self.internal_dataset = {'X_scenes': [], 'Y_rewards': [], 'Y_values': []}
         # Generate features from testbed model's pre-ultimate layer
         self.reset()
+
 
     @property
     def arms(self):
@@ -316,6 +319,8 @@ class ContextualStatefulBandit:
             data = kwarg_dict_to_device(data, self.device)
             y_preds, _, y_feats = self.testbed_model(**data)
             self.initial_predictions = y_preds.detach().cpu().argmax(1)
+
+        self.internal_dataset['X_scenes'].append(y_feats.cpu().numpy())
         self.features = y_feats.cpu().unsqueeze(1).numpy().repeat(self.n_arms, 1)
         self.po, self.perturbation_options = self.create_arm_augmentation_vectors()
         self.features = np.concatenate([self.features, self.po], axis=-1)
@@ -330,6 +335,7 @@ class ContextualStatefulBandit:
             arm_validity = []
             arm_predictions_before = self.confusion_model(**kwarg_dict_to_device(self.data, self.device))[
                 0].detach().cpu().argmax(1)
+
             programs = translate_str_program(self.programs)
             for object_index in range(0, 10):
                 for perturbation_index in range(0, 8):
@@ -396,6 +402,20 @@ class ContextualStatefulBandit:
             self.rewards = (model_answered_correctly * answer_stayed_the_same * (
                     1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
             # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
+
+            self.internal_dataset['Y_rewards'].append(np.argmax(self.rewards, 1))
+            self.internal_dataset['Y_values'].append(np.max(self.rewards, 1))
+            if len(self.internal_dataset['Y_values']) >= 20:
+                path_id = 0
+                path = f'./results/data_lin_part_{path_id}.pt'
+                while os.path.exists(path):
+                    path_id += 1
+                    path = f'./results/data_lin_part_{path_id}.pt'
+
+                with open(path, 'wb') as f:
+                    pickle.dump(self.internal_dataset, f)
+                del self.internal_dataset
+                self.internal_dataset = {'X_scenes': [], 'Y_rewards': [], 'Y_values': []}
             return self.rewards
         else:
             self.rewards = np.zeros((self.T, 1))
@@ -419,6 +439,7 @@ class ContextualStatefulBandit:
             self.rewards = (model_answered_correctly * answer_stayed_the_same * (
                     1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
             # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
+
             return self.rewards
 
     def _seed(self, seed=None):
@@ -446,10 +467,10 @@ def linUCBexperiment(args):
 
     with open(f'./results_linucb_{args.scale}.log', 'w+') as fout:
         ### Experiment 1 ###
-        train_duration = 400  # X 256 = 149_000
+        train_duration = 200  # X 256 = 149_000
         test_duration = 10_000  # X 1 = 5000
         cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
-                                       confusion_model=None, augmentation_strength=args.scale)
+                                       confusion_model=model_fool, augmentation_strength=args.scale)
         gg = LinUCB(cls,
                     reg_factor=1,
                     delta=0.1,
@@ -458,6 +479,7 @@ def linUCBexperiment(args):
                     )
 
         gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
+
 
         test_loader_iter = iter(test_loader)
         example_index = 0
@@ -484,7 +506,7 @@ def neuralUCBexperiment(args):
     else:
         os.mkdir(f'./results/experiment_neuralucb')
     T = 256
-    model, loader = get_fool_model(device=args.device, load_from=args.load_from,
+    model,model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                    scenes_path=args.scenes_path, questions_path=args.questions_path,
                                    clvr_path=args.clvr_path,
                                    use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
@@ -495,7 +517,7 @@ def neuralUCBexperiment(args):
     with open(f'./results_neuralucb_{args.scale}.log', 'w+') as fout:
         train_duration = 200  # X Batch Size = 128_000
         test_duration = 5000  # X 1 = 5000
-        cls = ContextualStatefulBandit(model, loader, T, 80, None, augmentation_strength=args.scale)
+        cls = ContextualStatefulBandit(model, loader, T, 80, model_fool, augmentation_strength=args.scale)
         gg = NeuralUCB(cls,
                        hidden_size=20,
                        reg_factor=1.0,
@@ -538,9 +560,9 @@ def linUCBexperiment_test(args):
 
     T = 1
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
-                                   scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                   clvr_path=args.clvr_path,
-                                   use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
+                                               scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                               clvr_path=args.clvr_path,
+                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
     test_duration = 10_000  # X 1 = 10_000
 
     if args.scale == 1 or args.scale == 1.0:

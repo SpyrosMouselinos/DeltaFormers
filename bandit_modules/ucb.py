@@ -1,6 +1,7 @@
 import abc
 
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 from .utils import inv_sherman_morrison
@@ -170,13 +171,19 @@ class UCB(abc.ABC):
         tqpostfix = {
             'Batches': 0.0,
             'Epochs': 0.0,
+            'Regret': 0.0,
         }
+        regret = []
         with tqdm(total=epochs * self.bandit.T, postfix=tqpostfix) as pbar:
             for epoch in range(epochs):
+                batch_regret = np.zeros(self.bandit.T)
                 for t in range(self.bandit.T):
                     self.update_confidence_bounds()
                     self.action = self.sample_action()
-                    self.actions.append(self.action)
+                    ### Calculate Regret ###
+                    best_reward = max(self.bandit.rewards[t,:])
+                    chosen_reward = self.bandit.rewards[t, self.action]
+                    batch_regret[t] = best_reward - chosen_reward
                     if t % self.train_every == 0 and t > 0:
                         self.train()
                     self.update_A_inv()
@@ -184,12 +191,23 @@ class UCB(abc.ABC):
                     self.iteration += 1
                     # get next batch
                 self.bandit.reset()
+
                 tqpostfix['Batches'] = (epoch + 1) * self.bandit.T
                 tqpostfix['Epochs'] = epoch
+                tqpostfix['Regret'] = batch_regret.mean()
+                for j in range(self.bandit.T):
+                    regret.append(batch_regret[j])
                 pbar.set_postfix(tqpostfix)
                 pbar.update(self.bandit.T)
                 if epoch % save_every_epochs == 0 and epoch > 0:
                     self.save(postfix=postfix)
+        plt.figure(figsize=(10,10))
+        plt.title(f"Regret VS Epochs for LinUCB @ {self.bandit.augmentation_strength}")
+        plt.plot(regret, 'b')
+        plt.ylim([0, 1])
+        plt.savefig(f'./regret_plot_{self.bandit.augmentation_strength}.png')
+        plt.close()
+
 
     def test(self, features):
         """
