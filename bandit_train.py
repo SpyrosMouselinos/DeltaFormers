@@ -701,7 +701,7 @@ if __name__ == '__main__':
 
     if args.mode == 'linear':
         linUCBexperiment(args)
-    elif args.mode == ' neural':
+    elif args.mode == 'neural':
         neuralUCBexperiment(args)
     elif args.mode == 'linear_test':
         linUCBexperiment_test(args)
