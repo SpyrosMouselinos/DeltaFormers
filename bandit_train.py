@@ -185,13 +185,13 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
     model = model.to(device)
     model.eval()
 
-    config_fool = f'./results/experiment_disentangled_sq/config.yaml'
+    config_fool = f'./results/experiment_linear_sq/config.yaml'
     with open(config_fool, 'r') as fin:
         config_fool = yaml.load(fin, Loader=yaml.FullLoader)
 
     model_fool = AVAILABLE_MODELS[config_fool['model_architecture']](config_fool)
     _print(f"Loading Model of type: {config_fool['model_architecture']}\n")
-    model_fool = load(path=f'./results/experiment_disentangled_sq/model.pt', model=model_fool)
+    model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
     model_fool = model_fool.to(device)
     model_fool.eval()
 
@@ -468,7 +468,7 @@ def linUCBexperiment(args):
 
     with open(f'./results_linucb_{args.scale}.log', 'w+') as fout:
         ### Experiment 1 ###
-        train_duration = 200  # X 256 = 149_000
+        train_duration = 50  # X 256 = 149_000
         test_duration = 10_000  # X 1 = 5000
         cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
                                        confusion_model=model_fool, augmentation_strength=args.scale)
@@ -476,7 +476,8 @@ def linUCBexperiment(args):
                     reg_factor=1,
                     delta=0.1,
                     confidence_scaling_factor=1.0,
-                    save_path='./results/experiment_linucb/'
+                    save_path='./results/experiment_linucb/',
+                    load_from=f'./results/experiment_linucb/linucb_model_scale_{args.scale}.pt'
                     )
 
         gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
