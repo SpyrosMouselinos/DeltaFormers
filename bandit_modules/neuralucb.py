@@ -36,7 +36,7 @@ class NeuralUCB(UCB):
                  ):
         self.iteration = 0
         self.save_path = save_path
-        self.rhs = np.sqrt(self.hidden_size)
+        self.rhs = np.sqrt(hidden_size)
         if load_from is None:
             # hidden size of the NN layers
             self.hidden_size = hidden_size
