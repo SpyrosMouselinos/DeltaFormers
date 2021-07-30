@@ -527,7 +527,7 @@ def linUCBexperiment(args):
         pass
     else:
         os.mkdir(f'./results/experiment_linucb')
-    T = 4
+    T = 256
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
@@ -635,6 +635,7 @@ def linUCBexperiment_test(args):
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
+
     test_duration = 10_000  # X 1 = 10_000
 
     if args.scale == 1 or args.scale == 1.0:
@@ -646,12 +647,13 @@ def linUCBexperiment_test(args):
     elif args.scale == 0.1:
         scale = 0.1
         scale_name = '0.1'
+
     cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
-                                   confusion_model=None, augmentation_strength=scale)
+                                   confusion_model=model_fool, augmentation_strength=scale)
     gg = LinUCB(cls,
                 reg_factor=1.0,
-                delta=0.1,
-                confidence_scaling_factor=1.0,
+                delta=0.01,
+                confidence_scaling_factor=0.01,
                 save_path='./results/experiment_linucb/',
                 load_from=f'./results/experiment_linucb/linucb_model_scale_{scale_name}.pt'
                 )
@@ -706,4 +708,4 @@ if __name__ == '__main__':
     elif args.mode == 'linear_test':
         linUCBexperiment_test(args)
     else:
-        testexperiment(args)
+        estexperiment(args)
