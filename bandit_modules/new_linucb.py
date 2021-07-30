@@ -147,6 +147,6 @@ class LinUCB(UCB):
     def evaluate(self, features):
         self.mu_hat = np.array(
             [
-                np.dot(features[0, a], self.theta[a]) for a in self.bandit.arms
+                np.dot(features[0, a], self.theta.T) for a in self.bandit.arms
             ]
         )

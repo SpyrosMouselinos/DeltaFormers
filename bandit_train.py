@@ -493,7 +493,7 @@ class TestStatefulBandit:
         return self.rewards
 
 
-def testexperiment(args):
+def estexperiment(args):
     T = 256
     ### Experiment 1 ###
     train_duration = 5
@@ -527,7 +527,7 @@ def linUCBexperiment(args):
         pass
     else:
         os.mkdir(f'./results/experiment_linucb')
-    T = 256
+    T = 4
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
@@ -550,7 +550,7 @@ def linUCBexperiment(args):
                     guide_for=600
                     )
 
-        gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
+        #gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
 
         test_loader_iter = iter(test_loader)
         example_index = 0
@@ -576,7 +576,7 @@ def neuralUCBexperiment(args):
         pass
     else:
         os.mkdir(f'./results/experiment_neuralucb')
-    T = 256
+    T = 4
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
@@ -586,7 +586,7 @@ def neuralUCBexperiment(args):
                                   clvr_path=args.clvr_path)
 
     with open(f'./results_neuralucb_{args.scale}.log', 'w+') as fout:
-        train_duration = 500  # X Batch Size = 128_000
+        train_duration = 1  # X Batch Size = 128_000
         test_duration = 20_000  # X 1 = 20_000
         cls = ContextualStatefulBandit(model, loader, T, 80, model_fool, augmentation_strength=args.scale)
         gg = NeuralUCB(cls,
@@ -684,7 +684,7 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear')
+    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='neural')
     parser.add_argument('--scale', type=float, help='scale of arguments', default=1.0)
     # parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()
