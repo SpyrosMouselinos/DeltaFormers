@@ -438,8 +438,9 @@ class ContextualStatefulBandit:
             self.rewards = (model_answered_correctly * answer_stayed_the_same * (
                     1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
             # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
-
-            return self.rewards
+            change_rewards = (answer_stayed_the_same * (
+                    1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
+            return self.rewards, change_rewards
 
     def _seed(self, seed=None):
         if seed is not None:
@@ -550,7 +551,7 @@ def linUCBexperiment(args):
                     guide_for=600
                     )
 
-        #gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
+        gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
 
         test_loader_iter = iter(test_loader)
         example_index = 0
@@ -661,19 +662,21 @@ def linUCBexperiment_test(args):
     test_loader_iter = iter(loader)
     example_index = 0
     accuracy_drop = 0.0
+    change_drop = 0.0
     while example_index < test_duration:
         try:
             goo = next(test_loader_iter)
             test_features = cls.reset_features(goo)
-            test_rewards = cls.reset_rewards()
             ucb, _, action = gg.test(test_features)
-            accuracy_drop += max(0, test_rewards[0, action])
+            test_rewards, change_rewards = cls.reset_rewards(specific_action=action)
+            accuracy_drop += max(0, test_rewards[0][0])
+            change_drop += max(0, change_rewards[0][0])
             example_index += 1
             if example_index % 100 == 0 and example_index > 0:
-                _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+                _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}% | Answer Changed By: {100 * (change_drop / example_index)}%")
         except StopIteration:
             break
-    _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}%")
+    _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}% | Answer Changed By: {100 * (change_drop / example_index)}% ")
 
 
 if __name__ == '__main__':
@@ -686,7 +689,7 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='neural')
+    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear_test')
     parser.add_argument('--scale', type=float, help='scale of arguments', default=1.0)
     # parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()

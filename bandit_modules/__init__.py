@@ -1,5 +1,5 @@
 from .bandit import *
-from .linucb import *
+from .new_linucb import *
 from .neuralucb import *
 from .ucb import *
 from .utils import *
