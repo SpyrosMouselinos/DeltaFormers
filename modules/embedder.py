@@ -571,21 +571,22 @@ class DeltaSQFormerDisentangled(Module):
     def __init__(self, config: dict):
         super(DeltaSQFormerDisentangled, self).__init__()
         self.smed = SplitModalEmbedderDisentangled(config)
-        self.q_pos_enc = PositionalEncoding(d_model=config['hidden_dim'], dropout=0.1, max_len=50)
-        self.o_pos_enc = PositionalEncoding(d_model=config['hidden_dim'], dropout=0.1, max_len=10)
+        self.q_pos_enc = PositionalEncoding(d_model=config['hidden_dim'], dropout=0.0, max_len=50)
+        self.o_pos_enc = PositionalEncoding(d_model=config['hidden_dim'], dropout=0.0, max_len=10)
         self.opln = BertLayerNorm(config['hidden_dim'])
         self.ocln = BertLayerNorm(config['hidden_dim'])
         self.osln = BertLayerNorm(config['hidden_dim'])
         self.omln = BertLayerNorm(config['hidden_dim'])
         self.ozln = BertLayerNorm(config['hidden_dim'])
         self.qln = BertLayerNorm(config['hidden_dim'])
-        self.be = BertEncoder(config)
+        self.be = PreLNBertEncoder(config)
         self.classhead = MLPClassifierHead(config)
         return
 
     def forward(self, **kwargs):
         op_proj, oc_proj, os_proj, om_proj, oz_proj, questions, mixed_mask = self.smed(**kwargs)
-        mixed_mask = (1.0 - mixed_mask) * -10000.0
+        out_mask = mixed_mask
+        mixed_mask = (1. - out_mask) * -10000.0
         # Position Tokens #
         op_proj = self.opln(self.o_pos_enc(op_proj))
 
@@ -607,9 +608,10 @@ class DeltaSQFormerDisentangled(Module):
         question_emb = self.qln(question_emb)
 
         embeddings = torch.cat([op_proj, oc_proj, os_proj, om_proj, oz_proj, question_emb], dim=1)
-        out, atts = self.be.forward(embeddings, mixed_mask, output_all_encoded_layers=False,
+        out, atts = self.be.forward(embeddings, mixed_mask, linear_head_indicies=None,
                                     output_attention_probs=True)
-        item_output = out[-1][:, 0]
+        cancel_garbage = out_mask.squeeze(1).transpose(2, 1)
+        item_output = torch.mean((out * cancel_garbage), dim=1)
         answer = self.classhead(item_output)
 
         return answer, atts, item_output
@@ -703,7 +705,6 @@ class DeltaSQFormerPreLNLinear(Module):
         lin_mask = (1.0 - a) * -10000.0
         return lin_mask.unsqueeze(1).unsqueeze(2)
 
-
     def forward(self, **kwargs):
         ore, questions, stype_embeddings, mixed_mask, _ = self.smel(**kwargs)
         lin_mask = self.calc_lin_mask(mixed_mask)
@@ -717,7 +718,7 @@ class DeltaSQFormerPreLNLinear(Module):
         embeddings = torch.cat([object_emb, question_emb, special_emb], dim=1)
         out, atts = self.be.forward(embeddings, lin_mask, linear_head_indicies=[embeddings.size(1) - 1],
                                     output_attention_probs=True)
-        item_output = torch.mean(out[:, -self.num_special_heads:,:], dim=1)
+        item_output = torch.mean(out[:, -self.num_special_heads:, :], dim=1)
         answer = self.classhead(item_output)
 
         return answer, atts, item_output

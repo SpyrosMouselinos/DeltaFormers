@@ -56,7 +56,8 @@ def load(path: str, model: nn.Module, optim=None, sched=None, bs_sched=None, mod
     checkpoint = torch.load(path)
     # removes 'module' from dict entries, pytorch bug #3805
     if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
-        checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in checkpoint['model_state_dict'].items()}
+        checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in
+                                          checkpoint['model_state_dict'].items()}
     # if torch.cuda.device_count() > 1 and not any(k.startswith('module.') for k in checkpoint.keys()):
     #     checkpoint = {'module.' + k: v for k, v in checkpoint.items()}
     epoch = checkpoint['epoch']
@@ -182,8 +183,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             scenes_path=scenes_path,
                                                                             use_cache=use_cache)
         else:
-            #TODO: Change
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
+            # TODO: Change
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
@@ -226,6 +227,27 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         model = nn.DataParallel(model)
 
     criterion = nn.CrossEntropyLoss()
+
+    def entropy_att_loss(list_of_attention_mats):
+        def entr_(vector, epsilon=1e-7):
+            mask = 1.0 - (1.0 * vector.eq(0))
+            vector += epsilon
+            entropy = -vector * torch.log(vector)
+            entropy = entropy * mask
+            return entropy.sum(1).mean()
+
+        losses = []
+        for p in list_of_attention_mats:
+            losses.append(entr_(p.mean(1).squeeze(1)))
+        return losses
+
+    loss_criterion = lambda x: None
+    if 'use_att_entropy_loss' in config:
+        if bool(config['use_att_entropy_loss']):
+            loss_criterion = entropy_att_loss
+            att_entropy_loss_scale = float(
+                config['att_entropy_loss_base']) if 'att_entropy_loss_base' in config else 0.005
+
     metric = accuracy_metric
 
     total_loss = 0.
@@ -249,7 +271,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                         data, y_real = val_batch
                         data = kwarg_dict_to_device(data, device)
                         y_real = y_real.to(device)
-                        y_pred = model(**data)[0]
+                        y_pred, att, _ = model(**data)
                         val_loss = criterion(y_pred, y_real.squeeze(1))
                         val_acc = metric(y_pred, y_real.squeeze(1))
                         total_val_loss += val_loss.item()
@@ -284,8 +306,12 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                 y_real = y_real.to(device)
                 optimizer.zero_grad()
 
-                y_pred = model(**data)[0]
+                y_pred, att, _ = model(**data)
                 loss = criterion(y_pred, y_real.squeeze(1))
+                extra_losses = loss_criterion(att)
+                if extra_losses is not None:
+                    for extra_loss in extra_losses:
+                        loss += att_entropy_loss_scale * extra_loss
                 acc = metric(y_pred, y_real.squeeze(1))
 
                 loss.backward()
@@ -322,7 +348,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_preln')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_gt')
     parser.add_argument('--config', type=str, help='The path to the config file', default='./config_preln_sq.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)

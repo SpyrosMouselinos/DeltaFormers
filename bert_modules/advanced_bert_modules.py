@@ -1,8 +1,10 @@
 import copy
+import random
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.special import entr
 from torch.nn import Module as Module
 
 from bert_modules.utils import BertLayerNorm, BertSelfAttention
@@ -71,8 +73,12 @@ class PreLNBertEncoder(Module):
         layer = PreLNBertBlock(config)
         self.layer = nn.ModuleList([copy.deepcopy(layer) for _ in range(config['num_bert_layers'])])
         self.post_ln = BertLayerNorm(config['hidden_dim'])
+        self.use_mbe_pruning = bool(config['use_mbe_pruning']) if 'use_mbe_pruning' in config else False
+        self.mbe_pruning_base = float(config['mbe_pruning_base']) if 'use_mbe_pruning' in config else 0.0
+        self.use_random_pruning = bool(config['use_random_pruning']) if 'use_random_pruning' in config else False
+        self.random_pruning_base = float(config['random_pruning_base']) if 'use_random_pruning' in config else 1.0
 
-    def forward(self, hidden_states, attention_mask, linear_head_indicies=None, output_attention_probs=True):
+    def forward(self, hidden_states, attention_mask, linear_head_indicies=None, output_attention_probs=True, output_attention_entropy=False):
         all_attention_probs = []
         for i, layer_module in enumerate(self.layer):
             use_init_ln = (i != 0)
@@ -82,6 +88,15 @@ class PreLNBertEncoder(Module):
             if output_attention_probs:
                 hidden_states, attention_probs = hidden_states
                 all_attention_probs.append(attention_probs)
+
+                if self.use_mbe_pruning:
+                    mbe = entr(attention_probs.mean(1).squeeze(1).detach().cpu().numpy()).sum(1).mean()
+                    if mbe > len(self.layer) - (self.mbe_pruning_base) ** i:
+                        break
+
+            if self.use_random_pruning:
+                if random.uniform(0, 1) >= self.random_pruning_base:
+                    break
 
         final_state = self.post_ln(hidden_states)
         if output_attention_probs:

@@ -3,12 +3,11 @@ model_architecture: DeltaSQFormerDisentangled
 max_objects_per_scene: 50
 max_question_tokens_per_scene: 50
 question_vocabulary_size: 93
-embedding_dim: 128
-hidden_dim: 128
-inter_dim: 256
+embedding_dim: 256
+hidden_dim: 256
+inter_dim: 512
 num_token_types: 3
 num_attention_heads: 8
-attention_temperature: 0.15
 num_bert_layers: 5
 num_output_classes: 28
 use_bidirectional_encoder: 1

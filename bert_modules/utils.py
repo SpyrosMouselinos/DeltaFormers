@@ -73,7 +73,7 @@ class BertSelfAttention(Module):
         x = x.view(*new_x_shape)
         return x.permute(0, 2, 1, 3)
 
-    def forward(self, hidden_states, attention_mask, linear_head_indicies=None, output_attention_probs=False):
+    def forward(self, hidden_states, attention_mask, linear_head_indicies=None, output_attention_probs=False, swap_qk=False):
         if linear_head_indicies is None:
             linear_head_indicies = list(range(0, hidden_states.size(1)))
 
