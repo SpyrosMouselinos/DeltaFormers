@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 from torch.nn import Module as Module
 
-from bert_modules.bert_modules import BertLayerNorm, PositionalEncoding, BertEncoder
+from bert_modules.advanced_bert_modules import PreLNBertEncoder
+from bert_modules.bert_modules import BertEncoder
+from bert_modules.utils import BertLayerNorm, PositionalEncoding
 from relation_network_modules.relation_network_modules import RelationalLayer
 
 
@@ -307,11 +309,11 @@ class SplitModalEmbedderLinear(Module):
         self.material_embeddings = nn.Embedding(config['num_materials'] + 1, config['embedding_dim'], padding_idx=0)
         self.size_embeddings = nn.Embedding(config['num_sizes'] + 1, config['embedding_dim'], padding_idx=0)
         self.token_type_embeddings = nn.Embedding(config['num_token_types'] + 1, config['hidden_dim'], padding_idx=0)
-        self.reproject = nn.Linear(3 + 4 * config['embedding_dim'], config['hidden_dim'])
         if 'num_special_heads' in self.config:
             self.num_special_heads = self.config['num_special_heads']
         else:
             self.num_special_heads = 4
+        self.reproject = nn.Linear(3 + 4 * config['embedding_dim'], config['hidden_dim'])
         return
 
     def forward(self,
@@ -671,7 +673,51 @@ class DeltaSQFormerLinear(Module):
         embeddings = torch.cat([object_emb, question_emb, special_emb], dim=1)
         out, atts = self.be.forward(embeddings, cross_mask, output_all_encoded_layers=False,
                                     output_attention_probs=True)
-        item_output = torch.mean(out[-1][:, -self.num_special_heads:],dim=1)
+        item_output = torch.mean(out[-1][:, -self.num_special_heads:], dim=1)
+        answer = self.classhead(item_output)
+
+        return answer, atts, item_output
+
+
+class DeltaSQFormerPreLNLinear(Module):
+    def __init__(self, config: dict):
+        super(DeltaSQFormerPreLNLinear, self).__init__()
+        self.config = config
+        self.smel = SplitModalEmbedderLinear(config)
+        self.pos_enc = PositionalEncoding(d_model=config['embedding_dim'], dropout=0.0, max_len=50)
+        self.oln = BertLayerNorm(config['hidden_dim'])
+        self.qln = BertLayerNorm(config['hidden_dim'])
+        self.sln = BertLayerNorm(config['hidden_dim'])
+        self.be = PreLNBertEncoder(config)
+        self.classhead = MLPClassifierHead(config)
+        if 'num_special_heads' in self.config:
+            self.num_special_heads = self.config['num_special_heads']
+        else:
+            self.num_special_heads = 4
+        self.special_heads = nn.Parameter(torch.randn(self.num_special_heads, config['hidden_dim']),
+                                          requires_grad=True)
+        return
+
+    @staticmethod
+    def calc_lin_mask(a):
+        lin_mask = (1.0 - a) * -10000.0
+        return lin_mask.unsqueeze(1).unsqueeze(2)
+
+
+    def forward(self, **kwargs):
+        ore, questions, stype_embeddings, mixed_mask, _ = self.smel(**kwargs)
+        lin_mask = self.calc_lin_mask(mixed_mask)
+        object_emb = self.oln(ore)
+        question_emb = self.pos_enc(questions)
+        question_emb = self.qln(question_emb)
+        special_emb = self.special_heads.repeat((question_emb.size(0), 1, 1))
+        special_emb = special_emb + stype_embeddings
+        special_emb = self.sln(special_emb)
+
+        embeddings = torch.cat([object_emb, question_emb, special_emb], dim=1)
+        out, atts = self.be.forward(embeddings, lin_mask, linear_head_indicies=[embeddings.size(1) - 1],
+                                    output_attention_probs=True)
+        item_output = torch.mean(out[:, -self.num_special_heads:,:], dim=1)
         answer = self.classhead(item_output)
 
         return answer, atts, item_output

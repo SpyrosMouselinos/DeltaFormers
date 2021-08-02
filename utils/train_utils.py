@@ -297,13 +297,14 @@ class StateCLEVR(Dataset):
                 pickle.dump(info, fout)
 
         ### Rectify Programs ###
-        new_p = []
-        padding = 'P'
-        for entry in self.p:
-            entry = str(entry)
-            new_entry = padding * (2500 - len(entry)) + entry
-            new_p.append(new_entry)
-        self.p = new_p
+        if self.return_program:
+            new_p = []
+            padding = 'P'
+            for entry in self.p:
+                entry = str(entry)
+                new_entry = padding * (2500 - len(entry)) + entry
+                new_p.append(new_entry)
+            self.p = new_p
 
     def __len__(self):
         return len(self.x)
