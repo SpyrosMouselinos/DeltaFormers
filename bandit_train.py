@@ -586,7 +586,8 @@ def linUCBexperiment(args):
                     delta=0.01,
                     confidence_scaling_factor=0.01,
                     save_path='./results/experiment_linucb_corrected_oracle/',
-                    guide_for=20
+                    guide_for=20,
+                    load_from=args.bandit_load_from
                     )
 
         gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
@@ -639,7 +640,8 @@ def neuralUCBexperiment(args):
                        epochs=50,
                        train_every=(T // 2) - 1,
                        save_path='./results/experiment_neuralucb/',
-                       guide_for=300
+                       guide_for=20,
+                       load_from=args.bandit_load_from
                        )
 
         gg.run(epochs=train_duration, save_every_epochs=100, postfix=f'scale_{args.scale}')
@@ -747,6 +749,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training',
                         default='./results/experiment_cross_sq/model.pt')
+    parser.add_argument('--bandit_load_from', type=str, help='folder of scenes', default=None)
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
