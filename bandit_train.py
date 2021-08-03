@@ -19,6 +19,10 @@ from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5
 from bandit_modules.new_linucb import LinUCB
 from bandit_modules.neuralucb import NeuralUCB
 from oracle.Oracle_CLEVR import Oracle
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_style('darkgrid')
 
 
 def _print(something):
@@ -49,10 +53,14 @@ with open('./translation_tables.yaml', 'r') as fin:
 
 with open('./data/vocab.json', 'r') as fin:
     vocabs = json.load(fin)
+    q2index = vocabs['question_token_to_idx']
     back_translation = vocabs['answer_token_to_idx']
     back_translation.update({'true': back_translation['yes']})
     back_translation.update({'false': back_translation['no']})
     back_translation.update({'__invalid__': 3})  # So after -4 goes to -1
+
+index2q = {v: k for k, v in q2index.items()}
+index2a = {v: k for k, v in back_translation.items()}
 
 
 def translate_state(example_state):
@@ -82,7 +90,8 @@ def translate_state(example_state):
     for i in range(batch_size):
         template = header_template()
         number_of_objects = np.where(example_state['types'][i].numpy() == 1)[0]
-        object_positions = example_state['object_positions'][i].numpy()[number_of_objects]
+        object_positions = example_state['object_positions'][i].numpy()[number_of_objects] * np.array(
+            [3, 3, 360])  # Don't forget that you have scaled them
         object_colors = example_state['object_colors'][i].numpy()[number_of_objects]
         object_shapes = example_state['object_shapes'][i].numpy()[number_of_objects]
         object_materials = example_state['object_materials'][i].numpy()[number_of_objects]
@@ -202,7 +211,7 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
                                                                   return_program=True)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
-                                                 num_workers=0, shuffle=True, drop_last=True)
+                                                 num_workers=0, shuffle=False, drop_last=True)
 
     _print(f"Loader has : {len(val_dataloader)} batches\n")
     return model, model_fool, val_dataloader
@@ -223,6 +232,65 @@ def get_test_loader(load_from=None, clvr_path='data/', questions_path='data/', s
     test_dataloader = torch.utils.data.DataLoader(test_set, batch_size=1,
                                                   num_workers=0, shuffle=False, drop_last=True)
     return test_dataloader
+
+
+def bird_eye_view(index, x, y, mode='before', q=None, a=None):
+    if mode == 'before':
+        object_positions = x['object_positions'][0].numpy()
+        object_colors = [translation_tables['reverse_translation_color'][f] if f != 0 else None for f in
+                         x['object_colors'][0].numpy()]
+        object_shapes = [translation_tables['reverse_translation_shape'][f] if f != 0 else None for f in
+                         x['object_shapes'][0].numpy()]
+        object_materials = [translation_tables['reverse_translation_material'][f] if f != 0 else None for f in
+                            x['object_materials'][0].numpy()]
+        object_sizes = [translation_tables['reverse_translation_size'][f] if f != 0 else None for f in
+                        x['object_sizes'][0].numpy()]
+        q = [index2q[f] for f in x['question'][0].numpy()]
+        a = index2a[y.item() + 4]
+    else:
+        object_positions = [f['3d_coords'] for f in x['objects']]
+        object_colors = [f['color'] for f in x['objects']]
+        object_shapes = [f['shape'] for f in x['objects']]
+        object_materials = [f['material'] for f in x['objects']]
+        object_sizes = [f['size'] for f in x['objects']]
+        if q is None:
+            q = ''
+        else:
+            q = [index2q[f] for f in q]
+        if a is None:
+            a = ''
+        else:
+            a = index2a[a.item() + 4]
+
+    mmt = {
+        'cube': 's',
+        'cylinder': 'h',
+        'sphere': 'o',
+    }
+
+    mst = {
+        'large': 8,
+        'small': 6
+    }
+    plt.figure(figsize=(10, 10))
+    plt.title(a)
+    made_title = ' '.join([f for f in q if (f != '<NULL>') and (f != '<START>') and (f != '<END>')])
+    made_title = made_title[:len(made_title) // 2] + '\n' + made_title[len(made_title) // 2:]
+    plt.suptitle(f"{made_title}")
+    for oi in range(0, 10):
+        try:
+            x = object_positions[oi][0]
+            y = object_positions[oi][1]
+        except IndexError:
+            continue
+        if x != 0 and y != 0:
+            plt.scatter(x=x, y=y, c=object_colors[oi], s=mst[object_sizes[oi]] ** 3, marker=mmt[object_shapes[oi]])
+    plt.xlim(-1.5, 1.5)
+    plt.ylim(-1.5, 1.5)
+    plt.savefig(f"C:\\Users\\Guldan\\Desktop\\mismatch\\{mode}_{index}.png")
+    plt.show()
+    plt.close()
+    return
 
 
 class ContextualStatefulBandit:
@@ -319,7 +387,7 @@ class ContextualStatefulBandit:
             y_preds, _, y_feats = self.testbed_model(**data)
             self.initial_predictions = y_preds.detach().cpu().argmax(1)
 
-        #self.internal_dataset['X_scenes'].append(y_feats.cpu().numpy())
+        # self.internal_dataset['X_scenes'].append(y_feats.cpu().numpy())
         self.features = y_feats.cpu().unsqueeze(1).numpy().repeat(self.n_arms, 1)
         self.po, self.perturbation_options = self.create_arm_augmentation_vectors()
         self.features = np.concatenate([self.features, self.po], axis=-1)
@@ -374,7 +442,7 @@ class ContextualStatefulBandit:
                     1))
             arm_validity.append(res)
 
-            return arm_predictions_after, arm_predictions_before, arm_validity
+            return arm_predictions_after, arm_predictions_before, arm_validity, scene
 
     def reset_rewards(self, specific_action=None):
         """Generate rewards for each arm and each round,
@@ -402,8 +470,8 @@ class ContextualStatefulBandit:
                     1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
             # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
 
-            #self.internal_dataset['Y_rewards'].append(np.argmax(self.rewards, 1))
-            #self.internal_dataset['Y_values'].append(np.max(self.rewards, 1))
+            # self.internal_dataset['Y_rewards'].append(np.argmax(self.rewards, 1))
+            # self.internal_dataset['Y_values'].append(np.max(self.rewards, 1))
             # if len(self.internal_dataset['Y_values']) >= 20:
             #     path_id = 0
             #     path = f'./results/data_lin_part_{path_id}.pt'
@@ -418,7 +486,7 @@ class ContextualStatefulBandit:
             return self.rewards
         else:
             self.rewards = np.zeros((self.T, 1))
-            arm_predictions_after, arm_predictions_before, arm_validity = self.alter_data(
+            arm_predictions_after, arm_predictions_before, arm_validity, scene = self.alter_data(
                 specific_action=specific_action)
             arm_predictions_before = arm_predictions_before.unsqueeze(1)
             arm_predictions_after = torch.stack(arm_predictions_after, dim=1).long()
@@ -440,7 +508,7 @@ class ContextualStatefulBandit:
             # + ((1 - answer_stayed_the_same) * np.ones_like(self.rewards) * -1.0).numpy()
             change_rewards = (answer_stayed_the_same * (
                     1.0 - 1.0 * (arm_predictions_before - arm_predictions_after).eq(0))).numpy()
-            return self.rewards, change_rewards
+            return self.rewards, change_rewards, scene, arm_predictions_after
 
     def _seed(self, seed=None):
         if seed is not None:
@@ -477,11 +545,10 @@ class TestStatefulBandit:
     def reset_features(self):
         """Generate random context and the rewards that accompany it
         """
-        random_context = np.random.uniform(low=-1, high=1, size=((self.T, self.n_arms,32)))
+        random_context = np.random.uniform(low=-1, high=1, size=((self.T, self.n_arms, 32)))
         self.features = random_context / np.linalg.norm(random_context, 2, 2, True)
         self.n_features = self.features.shape[-1]
         return self.features
-
 
     def reset_rewards(self, specific_action=None):
         """Generate rewards for each arm and each round,
@@ -494,52 +561,23 @@ class TestStatefulBandit:
         return self.rewards
 
 
-def estexperiment(args):
-    T = 256
-    ### Experiment 1 ###
-    train_duration = 5
-    cls = TestStatefulBandit(T=T)
-    # gg = LinUCB(cls,
-    #             reg_factor=1,
-    #             delta=0.01,
-    #             confidence_scaling_factor=0.01,
-    #             guide_for=0
-    #             )
-    #
-    # gg.run(epochs=train_duration, save_every_epochs=5000, postfix=f'test')
-
-
-    # gg = NeuralUCB(cls,
-    #                hidden_size=20,
-    #                reg_factor=1.0,
-    #                delta=0.01,
-    #                confidence_scaling_factor=0.01,
-    #                training_window=T,
-    #                p=0.2,
-    #                learning_rate=0.01,
-    #                epochs=50,
-    #                train_every= (T // 2) - 1
-    #                )
-    # gg.run(epochs=train_duration, save_every_epochs=5000, postfix=f'test_neural')
-
-
 def linUCBexperiment(args):
     if osp.exists(f'./results/experiment_linucb'):
         pass
     else:
         os.mkdir(f'./results/experiment_linucb')
-    T = 256
+    T = 512
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=T)
     test_loader = get_test_loader(load_from=args.load_from,
-                                 scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                 clvr_path=args.clvr_path)
+                                  scenes_path=args.scenes_path, questions_path=args.questions_path,
+                                  clvr_path=args.clvr_path)
 
     with open(f'./results_linucb_{args.scale}.log', 'w+') as fout:
         ### Experiment 1 ###
-        train_duration = 1500  # X 256 = 149_000
+        train_duration = 100  # X 256 = 149_000
         test_duration = 20_000  # X 1 = 20_000
         cls = ContextualStatefulBandit(testbed_model=model, testbed_loader=loader, T=T, n_arms=80,
                                        confusion_model=model_fool, augmentation_strength=args.scale)
@@ -547,8 +585,8 @@ def linUCBexperiment(args):
                     reg_factor=1,
                     delta=0.01,
                     confidence_scaling_factor=0.01,
-                    save_path='./results/experiment_linucb/',
-                    guide_for=600
+                    save_path='./results/experiment_linucb_corrected_oracle/',
+                    guide_for=20
                     )
 
         gg.run(epochs=train_duration, save_every_epochs=50, postfix=f'scale_{args.scale}')
@@ -663,20 +701,45 @@ def linUCBexperiment_test(args):
     example_index = 0
     accuracy_drop = 0.0
     change_drop = 0.0
+    great_pickle_rick = {
+        'questions': [],
+        'questions_str': [],
+        'answers': [],
+        'answers_str': [],
+        'original_scenes': [],
+        'altered_scenes': [],
+    }
     while example_index < test_duration:
         try:
             goo = next(test_loader_iter)
             test_features = cls.reset_features(goo)
             ucb, _, action = gg.test(test_features)
-            test_rewards, change_rewards = cls.reset_rewards(specific_action=action)
+            test_rewards, change_rewards, after_scene, arm_predictions_after = cls.reset_rewards(specific_action=action)
             accuracy_drop += max(0, test_rewards[0][0])
             change_drop += max(0, change_rewards[0][0])
+            if test_rewards[0][0] > 0:
+                bird_eye_view(example_index, goo[0], goo[1][0], 'before')
+                bird_eye_view(example_index, after_scene, goo[1][0], 'after', q=goo[0]['question'][0].numpy(),
+                              a=arm_predictions_after)
+                great_pickle_rick['original_scenes'].append(translate_state(goo[0]))
+                great_pickle_rick['altered_scenes'].append(after_scene)
+                great_pickle_rick['questions_str'].append(
+                    [index2q[f] for f in goo[0]['question'][0].numpy() if not index2q[f].startswith('<')])
+                great_pickle_rick['answers_str'].append(index2a[arm_predictions_after.item() + 4])
+                great_pickle_rick['questions'].append(
+                    goo[0]['question'][0].numpy()[np.where(goo[0]['question'][0].numpy() != 0)[0]])
+                great_pickle_rick['answers'].append(arm_predictions_after.item() + 4)
+
             example_index += 1
             if example_index % 100 == 0 and example_index > 0:
-                _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}% | Answer Changed By: {100 * (change_drop / example_index)}%")
+                _print(
+                    f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}% | Answer Changed By: {100 * (change_drop / example_index)}%")
         except StopIteration:
             break
-    _print(f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}% | Answer Changed By: {100 * (change_drop / example_index)}% ")
+    _print(
+        f"Scale {args.scale} | Accuracy Dropped By: {100 * (accuracy_drop / example_index)}% | Answer Changed By: {100 * (change_drop / example_index)}% ")
+    with open('./great_ucb_pickle.pt', 'wb') as fout:
+        pickle.dump(great_pickle_rick, fout)
 
 
 if __name__ == '__main__':
@@ -689,7 +752,7 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear_test')
+    parser.add_argument('--mode', type=str, help='what kind of experiment to run', default='linear')
     parser.add_argument('--scale', type=float, help='scale of arguments', default=1.0)
     # parser.add_argument('--load_from', type=str, help='where to load a model', default=None)
     args = parser.parse_args()
@@ -710,5 +773,3 @@ if __name__ == '__main__':
         neuralUCBexperiment(args)
     elif args.mode == 'linear_test':
         linUCBexperiment_test(args)
-    else:
-        estexperiment(args)
