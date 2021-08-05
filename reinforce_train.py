@@ -397,10 +397,10 @@ def PolicyEvaluation(args):
                                                clvr_path=args.clvr_path,
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS)
 
-    train_duration = 1500
+    train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS)
     model = PolicyNet(input_size=128, dropout=0.0)
-    trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=0.001,
+    trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS)
 
     trainer.train(log_every=100, save_every=500)
@@ -416,8 +416,10 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=10.0)
-    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=1.0)
+    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=100.0)
+    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=20.0)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=1500)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.001)
 
     args = parser.parse_args()
     PolicyEvaluation(args)
