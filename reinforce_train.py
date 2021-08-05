@@ -382,7 +382,7 @@ class ConfusionGame:
 
         fail_rewards = -1 * torch.ones_like(change_rewards)
         self.rewards = (self.confusion_weight + 1) * confusion_rewards.numpy() + (
-                    self.change_weight + 1) * change_rewards.numpy() + fail_rewards.numpy()
+                self.change_weight + 1) * change_rewards.numpy() + fail_rewards.numpy()
         return self.rewards, confusion_rewards, change_rewards, scene, predictions_after
 
 
@@ -400,6 +400,8 @@ def PolicyEvaluation(args):
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS)
     model = PolicyNet(input_size=128, dropout=0.0)
+    if args.cont > 0:
+        model.load('./results/experiment_reinforce/model_reinforce.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS)
 
@@ -420,6 +422,7 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=20.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=1500)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.001)
+    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
 
     args = parser.parse_args()
     PolicyEvaluation(args)
