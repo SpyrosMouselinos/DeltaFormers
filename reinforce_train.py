@@ -296,10 +296,14 @@ class ConfusionGame:
                  batch_size=256,
                  confusion_weight=10.0,
                  change_weight=1.0,
+                 fail_weight=-1.0,
+                 invalid_weight=0.0,
                  ):
 
         self.confusion_weight = confusion_weight
         self.change_weight = change_weight
+        self.fail_weight = fail_weight
+        self.invalid_weight = invalid_weight
         self.batch_size = batch_size
         self.testbed_model = testbed_model
         self.testbed_model.eval()
@@ -380,9 +384,10 @@ class ConfusionGame:
         change_rewards = (answer_stayed_the_same * (
                 1.0 - 1.0 * (predictions_before - predictions_after).eq(0)))
 
-        fail_rewards = -1 * torch.ones_like(change_rewards)
+        fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
+        invalid_scene_rewards = self.invalid_weight * (1 - answer_stayed_the_same)
         self.rewards = (self.confusion_weight + 1) * confusion_rewards.numpy() + (
-                self.change_weight + 1) * change_rewards.numpy() + fail_rewards.numpy()
+                self.change_weight + 1) * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
         return self.rewards, confusion_rewards, change_rewards, scene, predictions_after
 
 
@@ -398,7 +403,9 @@ def PolicyEvaluation(args):
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS)
 
     train_duration = args.train_duration
-    rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS)
+    rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
+                            confusion_weight=args.confusion_weight, change_weight=args.change_weight,
+                            fail_weight=args.fail_weight, invalid_weight=args.invalid_weight)
     model = PolicyNet(input_size=128, dropout=0.0)
     if args.cont > 0:
         model.load('./results/experiment_reinforce/model_reinforce.pt')
@@ -420,8 +427,10 @@ if __name__ == '__main__':
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=100.0)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=20.0)
+    parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-1.0)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=1500)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.00001)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.001)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=256)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
 
