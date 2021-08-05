@@ -207,7 +207,7 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
                                                                   return_program=True)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
-                                                 num_workers=0, shuffle=False, drop_last=True)
+                                                 num_workers=0, shuffle=True, drop_last=True)
 
     _print(f"Loader has : {len(val_dataloader)} batches\n")
     return model, model_fool, val_dataloader
@@ -391,7 +391,7 @@ def PolicyEvaluation(args):
         pass
     else:
         os.mkdir(f'./results/experiment_reinforce')
-    BS = 256
+    BS = args.bs
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
@@ -421,7 +421,8 @@ if __name__ == '__main__':
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=100.0)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=20.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=1500)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.001)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.00001)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=256)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
 
     args = parser.parse_args()

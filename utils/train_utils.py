@@ -255,6 +255,7 @@ class StateCLEVR(Dataset):
             self.translation = info['translation']
             self.q2index = info['q2index']
             self.a2index = info['a2index']
+            # TODO: Remove this!
             self.x = info['x']
             self.y = info['y']
 
