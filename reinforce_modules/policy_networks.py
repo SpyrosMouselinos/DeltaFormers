@@ -14,27 +14,61 @@ def _print(something):
     return
 
 
-class PolicyNet(nn.Module):
+class QuestionReintroduce(nn.Module):
+    def __init__(self, input_size, hidden_size, reverse_input=False):
+        super(QuestionReintroduce, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.reverse_input = reverse_input
+        self.embeddings = nn.Embedding(num_embeddings=93, embedding_dim=self.input_size, padding_idx=0)
+        self.lstm = nn.LSTM(input_size=self.input_size, hidden_size=self.hidden_size, batch_first=True)
+
+    def forward(self, x):
+        if self.reverse_input:
+            x = torch.flip(x, [1])
+        emb_x = self.embeddings(x)
+        aggregated = self.lstm(emb_x)
+        return aggregated
+
+    def save(self, path):
+        torch.save(self.state_dict(), path)
+        if os.path.exists(path):
+            return True
+        else:
+            return False
+
+    def load(self, path):
+        self.load_state_dict(torch.load(path))
+        return
+
+
+class FFNet(nn.Module):
     def __init__(self, input_size, dropout=0.0):
-        super(PolicyNet, self).__init__()
+        super(FFNet, self).__init__()
         self.input_size = input_size
         # Pre-Processing #
         self.fc1 = nn.Linear(input_size, input_size)
         self.fc1_d = nn.Dropout(p=dropout)
-        self.fc2 = nn.Linear(input_size, input_size // 2)
+        self.fc2 = nn.Linear(input_size, input_size)
         self.fc2_d = nn.Dropout(p=dropout)
+        self.fc3 = nn.Linear(input_size, input_size // 2)
+        # self.fc3_d = nn.Dropout(p=dropout)
+        # self.fc4 = nn.Linear(input_size, input_size // 2)
+        # self.fc4_d = nn.Dropout(p=dropout)
         # Output #
         self.mu = nn.Linear(input_size // 2, 20)
         # self.logsigma_diag = nn.Linear(input_size // 2, 20)
         self.sigma_diag = nn.Linear(input_size // 2, 20)
 
     def forward(self, x):
-        x = self.fc1_d(F.relu(self.fc1(x), inplace=True))
-        x = self.fc2_d(F.relu(self.fc2(x), inplace=True))
+        x = F.relu(self.fc1(x), inplace=True)
+        x = F.relu(self.fc2(x), inplace=True)
+        x = F.relu(self.fc3(x), inplace=True)
+        # x = self.fc4_d(F.relu(self.fc4(x), inplace=True))
         # Means are limited to [-0.3,+0.3] Range
         mu = 0.3 * torch.tanh(self.mu(x))
         # Stds are limited to (0,1] range -> Log(Std) is limited to (-inf, 0]
-        sigma_diag = torch.sigmoid(self.sigma_diag(x)) + 1e-2
+        sigma_diag = 0.00001 * torch.sigmoid(self.sigma_diag(x)) + 1e-5
         return mu, sigma_diag
 
     def save(self, path):
@@ -48,6 +82,34 @@ class PolicyNet(nn.Module):
         self.load_state_dict(torch.load(path))
         return
 
+
+class PolicyNet(nn.Module):
+    def __init__(self, input_size, hidden_size, dropout=0.0, reverse_input=False):
+        super(PolicyNet, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.reverse_input = reverse_input
+        self.dropout = dropout
+        self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
+        self.final_model = FFNet(hidden_size + 128, dropout)
+
+    def forward(self, x, q):
+        _, (q_summary, _) = self.question_model(q)
+        q_summary = torch.squeeze(q_summary, 0)
+        mix = torch.cat([x, q_summary], 1)
+        mu, sigma_diag = self.final_model(mix)
+        return mu, sigma_diag
+
+    def save(self, path):
+        torch.save(self.state_dict(), path)
+        if os.path.exists(path):
+            return True
+        else:
+            return False
+
+    def load(self, path):
+        self.load_state_dict(torch.load(path))
+        return
 
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
@@ -73,30 +135,24 @@ class Re1nforceTrainer:
         accuracy_drop = []
         batch_idx = 0
         epochs_passed = 0
+        epoch_accuracy_drop = 0
+        epoch_accuracy_drop_history = []
         # marked_batches = {}
         while batch_idx < self.training_duration:
-            # Reset all marked batches !#
-            # if epochs_passed % self.batch_reset == 0 and epochs_passed > 0:
-            #     marked_batches = {}
-
-            # Dont use marked batches !#
-            # if batch_idx % len(self.dataloader) in marked_batches:
-            #     if marked_batches[batch_idx % len(self.dataloader)] >= self.batch_tolerance:
-            #         # Burn Batch #
-            #         _print(f"Burning Batch {batch_idx} | equivalent to {batch_idx % len(self.dataloader)}...")
-            #         _ = next(self.dataloader_iter)
-            #         batch_idx += 1
-            #         continue
             try:
-                features = self.game.extract_features(self.dataloader_iter)
+                features, org_data = self.game.extract_features(self.dataloader_iter)
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
-                features = self.game.extract_features(self.dataloader_iter)
+                features, org_data = self.game.extract_features(self.dataloader_iter)
+                _print(
+                    f"REINFORCE  Epoch {epochs_passed} | Epoch Accuracy Drop: {epoch_accuracy_drop}%")
                 epochs_passed += 1
+                epoch_accuracy_drop_history.append(epoch_accuracy_drop)
+                epoch_accuracy_drop = 0
 
             # Forward Pass #
-            mu, sigma_diag = self.model(features)
+            mu, sigma_diag = self.model(features, org_data['question'])
             cov_mat = torch.diag_embed(sigma_diag)
             m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
             mixed_actions = m.sample()
@@ -104,29 +160,22 @@ class Re1nforceTrainer:
             # Calc Reward #
             rewards, confusion_rewards, _, _, _ = self.game.get_rewards(mixed_actions)
             loss = -m.log_prob(mixed_actions) * torch.FloatTensor(rewards).squeeze(1).to(self.device)
+            #loss = torch.FloatTensor(rewards).squeeze(1).to(self.device)
             loss = loss.mean()
             # Null Grad #
             optimizer.zero_grad()
             loss.backward()
             # Clip Norms of 10 and higher #
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
+            # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
             optimizer.step()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean())
             accuracy_drop.append(batch_accuracy)
+            epoch_accuracy_drop += batch_accuracy
             if batch_idx % log_every == 0 and batch_idx > 0:
                 _print(
-                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop[-10_000:]).mean()}%")
+                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop).mean()}%")
             if batch_idx % save_every == 0 and batch_idx > 0:
                 self.model.save('./results/experiment_reinforce/model_reinforce.pt')
-
-            # if batch_accuracy == 0.0:
-            #     # If batch has 0 accuracy mark it  MAKE SURE LOADER DOES NOT SHUFFLE!#
-            #     if batch_idx % len(self.dataloader) not in marked_batches:
-            #         marked_batches.update({batch_idx % len(self.dataloader): 1})
-            #     else:
-            #         marked_batches[batch_idx % len(self.dataloader)] += 1
-            #     _print(f"Found {len(marked_batches)} bad batches so far")
-
             batch_idx += 1
         self.model.save('./results/experiment_reinforce/model_reinforce.pt')
         plt.figure(figsize=(10, 10))
@@ -135,5 +184,14 @@ class Re1nforceTrainer:
         plt.ylabel("Accuracy Drop on 96% State Transformer")
         plt.xlabel("Training Iterations")
         plt.savefig('./results/experiment_reinforce/progress.png')
+        plt.show()
+        plt.close()
+
+        plt.figure(figsize=(10, 10))
+        plt.title('REINFORCE Epoch Accuracy Drop Progress')
+        plt.plot(accuracy_drop, 'b')
+        plt.ylabel("Accuracy Drop on 96% State Transformer")
+        plt.xlabel("Epochs")
+        plt.savefig('./results/experiment_reinforce/epoch_progress.png')
         plt.show()
         plt.close()
