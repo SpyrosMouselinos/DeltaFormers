@@ -47,26 +47,26 @@ class FFNet(nn.Module):
         super(FFNet, self).__init__()
         self.input_size = input_size
         # Pre-Processing #
-        self.fc1 = nn.Linear(input_size, input_size)
-        self.fc1_d = nn.Dropout(p=dropout)
-        self.fc2 = nn.Linear(input_size, input_size)
-        self.fc2_d = nn.Dropout(p=dropout)
-        self.fc3 = nn.Linear(input_size, input_size // 2)
+        self.fc1 = nn.Linear(input_size, input_size // 2)
+        #self.fc1_d = nn.Dropout(p=dropout)
+        self.fc2 = nn.Linear(input_size // 2, input_size // 4)
+        #self.fc2_d = nn.Dropout(p=dropout)
+        #self.fc3 = nn.Linear(input_size, input_size // 2)
         # self.fc3_d = nn.Dropout(p=dropout)
         # self.fc4 = nn.Linear(input_size, input_size // 2)
         # self.fc4_d = nn.Dropout(p=dropout)
         # Output #
-        self.mu = nn.Linear(input_size // 2, 20)
+        self.mu = nn.Linear(input_size // 4, 20)
         # self.logsigma_diag = nn.Linear(input_size // 2, 20)
-        self.sigma_diag = nn.Linear(input_size // 2, 20)
+        self.sigma_diag = nn.Linear(input_size // 4, 20)
 
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
         x = F.relu(self.fc2(x), inplace=True)
-        x = F.relu(self.fc3(x), inplace=True)
+        #x = F.relu(self.fc3(x), inplace=True)
         # x = self.fc4_d(F.relu(self.fc4(x), inplace=True))
         # Means are limited to [-0.3,+0.3] Range
-        mu = 0.3 * torch.tanh(self.mu(x))
+        mu = self.mu(x)
         # Stds are limited to (0,1] range -> Log(Std) is limited to (-inf, 0]
         sigma_diag = 0.00001 * torch.sigmoid(self.sigma_diag(x)) + 1e-5
         return mu, sigma_diag
@@ -173,7 +173,7 @@ class Re1nforceTrainer:
                     total_norm += param_norm.item() ** 2
                 total_norm = total_norm ** (1. / 2)
                 _print(f"Gradient Norm is {total_norm}")
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 2)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
             optimizer.step()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean())
             accuracy_drop.append(batch_accuracy)
