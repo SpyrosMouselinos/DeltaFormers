@@ -146,9 +146,9 @@ class Re1nforceTrainer:
                 self.dataloader_iter = iter(self.dataloader)
                 features, org_data = self.game.extract_features(self.dataloader_iter)
                 _print(
-                    f"REINFORCE  Epoch {epochs_passed} | Epoch Accuracy Drop: {epoch_accuracy_drop}%")
+                    f"REINFORCE  Epoch {epochs_passed} | Epoch Accuracy Drop: {epoch_accuracy_drop / len(self.dataloader)}%")
                 epochs_passed += 1
-                epoch_accuracy_drop_history.append(epoch_accuracy_drop)
+                epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(self.dataloader))
                 epoch_accuracy_drop = 0
 
             # Forward Pass #
@@ -166,7 +166,14 @@ class Re1nforceTrainer:
             optimizer.zero_grad()
             loss.backward()
             # Clip Norms of 10 and higher #
-            # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
+            if batch_idx % log_every == 0 and batch_idx > 0:
+                total_norm = 0
+                for p in self.model.parameters():
+                    param_norm = p.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+                total_norm = total_norm ** (1. / 2)
+                _print(f"Gradient Norm is {total_norm}")
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 2)
             optimizer.step()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean())
             accuracy_drop.append(batch_accuracy)
@@ -189,7 +196,7 @@ class Re1nforceTrainer:
 
         plt.figure(figsize=(10, 10))
         plt.title('REINFORCE Epoch Accuracy Drop Progress')
-        plt.plot(accuracy_drop, 'b')
+        plt.plot(epoch_accuracy_drop_history, 'b')
         plt.ylabel("Accuracy Drop on 96% State Transformer")
         plt.xlabel("Epochs")
         plt.savefig('./results/experiment_reinforce/epoch_progress.png')
