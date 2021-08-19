@@ -236,7 +236,6 @@ class SplitModalEmbedderNoType(Module):
         mixed_mask = torch.cat([object_mask, question_mask], dim=3)
 
         questions = self.question_embeddings(question)
-        questions = questions
         op_proj = object_positions
         oc_proj = self.color_embeddings(object_colors)
         os_proj = self.shape_embeddings(object_shapes)
@@ -442,14 +441,15 @@ class QuestionEmbedModel(Module):
         self.bidirectional = bool(config['use_bidirectional_encoder'])
         self.lstm = nn.LSTM(config['embedding_dim'], config['hidden_dim'], batch_first=True,
                             bidirectional=self.bidirectional)
-        self.reduce = nn.Linear(2 * config['hidden_dim'], config['hidden_dim'])
+        #self.reduce = nn.Linear(2 * config['hidden_dim'], config['hidden_dim'])
 
     def forward(self, question):
         self.lstm.flatten_parameters()
+        question = torch.flip(question, [1])
         _, (h, c) = self.lstm(question)
         h = torch.transpose(h, 1, 0)
         h = h.reshape(h.size(0), h.size(1) * h.size(2))
-        h = self.reduce(h)
+        #h = self.reduce(h)
         return h
 
 
@@ -483,9 +483,9 @@ class DeltaRN(Module):
     def forward(self, **kwargs):
         ore, questions, object_mask, question_mask, _ = self.sme(**kwargs)
         qst = self.seq(questions)
-        answer = self.rn(ore, qst)
+        answer, feats = self.rn(ore, qst)
 
-        return answer, None, None
+        return answer, None, feats
 
 
 class DeltaRNFP(Module):

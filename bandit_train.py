@@ -48,10 +48,10 @@ AVAILABLE_MODELS = {'DeltaRN': DeltaRN,
                     'DeltaSQFormerLinear': DeltaSQFormerLinear,
                     'DeltaQFormer': DeltaQFormer}
 
-with open('./translation_tables.yaml', 'r') as fin:
+with open('C:\\Users\\Guldan\\Desktop\\DeltaFormers\\translation_tables.yaml', 'r') as fin:
     translation_tables = yaml.load(fin, Loader=yaml.FullLoader)
 
-with open('./data/vocab.json', 'r') as fin:
+with open('C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\vocab.json', 'r') as fin:
     vocabs = json.load(fin)
     q2index = vocabs['question_token_to_idx']
     back_translation = vocabs['answer_token_to_idx']
@@ -245,8 +245,14 @@ def bird_eye_view(index, x, y, mode='before', q=None, a=None):
                             x['object_materials'][0].numpy()]
         object_sizes = [translation_tables['reverse_translation_size'][f] if f != 0 else None for f in
                         x['object_sizes'][0].numpy()]
-        q = [index2q[f] for f in x['question'][0].numpy()]
-        a = index2a[y.item() + 4]
+        if q is None:
+            q = ''
+        else:
+            q = [index2q[f] for f in x['question'][0].numpy()]
+        if a is None:
+            a = ''
+        else:
+            a = index2a[y.item() + 4]
     else:
         object_positions = [f['3d_coords'] for f in x['objects']]
         object_colors = [f['color'] for f in x['objects']]
@@ -285,9 +291,7 @@ def bird_eye_view(index, x, y, mode='before', q=None, a=None):
             continue
         if x != 0 and y != 0:
             plt.scatter(x=x, y=y, c=object_colors[oi], s=mst[object_sizes[oi]] ** 3, marker=mmt[object_shapes[oi]])
-    plt.xlim(-1.5, 1.5)
-    plt.ylim(-1.5, 1.5)
-    plt.savefig(f"C:\\Users\\Guldan\\Desktop\\mismatch\\{mode}_{index}.png")
+    plt.savefig(f"C:\\Users\\Guldan\\Desktop\\weird\\{mode}_{index}.png")
     plt.show()
     plt.close()
     return

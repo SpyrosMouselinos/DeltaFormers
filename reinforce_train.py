@@ -331,7 +331,7 @@ class ConfusionGame:
 
         self.features = y_feats
         self.n_features = self.features.shape[-1]
-        return self.features, data
+        return self.features, data, y_real
 
     @staticmethod
     def alter_object_positions_on_action(features, action_vector):
@@ -386,8 +386,8 @@ class ConfusionGame:
 
         fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
         invalid_scene_rewards = self.invalid_weight * (1 - answer_stayed_the_same)
-        self.rewards = (self.confusion_weight + 1) * confusion_rewards.numpy() + (
-                self.change_weight + 1) * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
+        self.rewards = self.confusion_weight * confusion_rewards.numpy() + (
+                self.change_weight) * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
         return self.rewards, confusion_rewards, change_rewards, scene, predictions_after
 
 
@@ -413,7 +413,8 @@ def PolicyEvaluation(args):
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS)
 
-    trainer.train(log_every=100, save_every=1000)
+    #trainer.train(log_every=100, save_every=10000)
+    trainer.evaluate()
 
 
 if __name__ == '__main__':
@@ -426,14 +427,14 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1.0)
+    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=10.0)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-1.0)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-10.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=20000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.001)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
-    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=128)
+    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=1)
 
     args = parser.parse_args()
     PolicyEvaluation(args)

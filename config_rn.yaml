@@ -10,7 +10,7 @@ num_token_types: 3
 num_attention_heads: 8
 num_bert_layers: 5
 num_output_classes: 28
-use_bidirectional_encoder: 1
+use_bidirectional_encoder: 0
 
 num_colors: 8
 num_shapes: 5
@@ -21,15 +21,16 @@ num_scene_positions: 4
 num_questions_per_image: 10
 
 
-max_epochs: 170
-batch_size: 64
-lr: 0.00005
-max_lr: 0.0006
-max_batch_size: 512
-scheduler_step_size: 10
-bs_scheduler_step_size: 10
-scheduler_gamma: 1.5
-bs_scheduler_gamma: 2
+max_epochs: 180
+clip_grad_norm: 50
+batch_size: 12
+lr: 0.000005
+max_lr: 0.0005
+max_batch_size: 640
+scheduler_step_size: 20
+bs_scheduler_step_size: 1000000000000000000000000
+scheduler_gamma: 2
+bs_scheduler_gamma: 1
 log_every: 500
 validate_every: 20000
 early_stopping: 10
@@ -39,5 +40,5 @@ g_layers: [512,512,512,512]
 question_injection_position: 0
 f_fc1: 512
 f_fc2: 1024
-rl_dropout: 0.5
+rl_dropout: 0.05
 n_workers: 0
