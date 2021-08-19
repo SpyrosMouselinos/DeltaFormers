@@ -256,12 +256,12 @@ class StateCLEVR(Dataset):
             self.q2index = info['q2index']
             self.a2index = info['a2index']
             # TODO: Remove this!
-            self.x = info['x'][:1000]
-            self.y = info['y'][:1000]
+            self.x = info['x']
+            self.y = info['y']
 
             if self.return_program:
                 try:
-                    self.p = info['p'][:1000]
+                    self.p = info['p']
                 except KeyError:
                     print("Dataset loaded without program!\n")
                     self.return_program = False
