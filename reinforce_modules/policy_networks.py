@@ -48,27 +48,27 @@ class FFNet(nn.Module):
         self.input_size = input_size
         # Pre-Processing #
         self.fc1 = nn.Linear(input_size, input_size // 2)
-        #self.fc1_d = nn.Dropout(p=dropout)
+        self.fc1_d = nn.Dropout(p=dropout)
         self.fc2 = nn.Linear(input_size // 2, input_size // 4)
-        #self.fc2_d = nn.Dropout(p=dropout)
-        #self.fc3 = nn.Linear(input_size, input_size // 2)
+        self.fc2_d = nn.Dropout(p=dropout)
+        #self.fc3 = nn.Linear(input_size // 4, input_size // 4)
         # self.fc3_d = nn.Dropout(p=dropout)
         # self.fc4 = nn.Linear(input_size, input_size // 2)
         # self.fc4_d = nn.Dropout(p=dropout)
         # Output #
         self.mu = nn.Linear(input_size // 4, 20)
         # self.logsigma_diag = nn.Linear(input_size // 2, 20)
-        self.sigma_diag = nn.Linear(input_size // 4, 20)
+        # self.sigma_diag = nn.Linear(input_size // 4, 20)
 
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
         x = F.relu(self.fc2(x), inplace=True)
-        #x = F.relu(self.fc3(x), inplace=True)
         # x = self.fc4_d(F.relu(self.fc4(x), inplace=True))
         # Means are limited to [-0.3,+0.3] Range
         mu = self.mu(x)
         # Stds are limited to (0,1] range -> Log(Std) is limited to (-inf, 0]
-        sigma_diag = 0.00001 * torch.sigmoid(self.sigma_diag(x)) + 1e-5
+        # sigma_diag = 0.00001 * torch.sigmoid(self.sigma_diag(x)) + 1e-5
+        sigma_diag = 0.01 * torch.ones_like(mu)
         return mu, sigma_diag
 
     def save(self, path):
@@ -84,18 +84,23 @@ class FFNet(nn.Module):
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, input_size, hidden_size, dropout=0.0, reverse_input=False):
+    def __init__(self, input_size, hidden_size, dropout=0.0,  reverse_input=False):
         super(PolicyNet, self).__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.reverse_input = reverse_input
         self.dropout = dropout
+        self.layer_norm_x = nn.LayerNorm(128)
+        self.layer_norm_q = nn.LayerNorm(hidden_size)
         self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
         self.final_model = FFNet(hidden_size + 128, dropout)
+
 
     def forward(self, x, q):
         _, (q_summary, _) = self.question_model(q)
         q_summary = torch.squeeze(q_summary, 0)
+        #x = self.layer_norm_x(x)
+        #q_summary = self.layer_norm_q(q_summary)
         mix = torch.cat([x, q_summary], 1)
         mu, sigma_diag = self.final_model(mix)
         return mu, sigma_diag
@@ -110,6 +115,7 @@ class PolicyNet(nn.Module):
     def load(self, path):
         self.load_state_dict(torch.load(path))
         return
+
 
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
@@ -160,7 +166,6 @@ class Re1nforceTrainer:
             # Calc Reward #
             rewards, confusion_rewards, _, _, _ = self.game.get_rewards(mixed_actions)
             loss = -m.log_prob(mixed_actions) * torch.FloatTensor(rewards).squeeze(1).to(self.device)
-            #loss = torch.FloatTensor(rewards).squeeze(1).to(self.device)
             loss = loss.mean()
             # Null Grad #
             optimizer.zero_grad()
@@ -168,14 +173,23 @@ class Re1nforceTrainer:
             # Clip Norms of 10 and higher #
             if batch_idx % log_every == 0 and batch_idx > 0:
                 total_norm = 0
-                for p in self.model.parameters():
+                max_p = None
+                max_norm = 0
+                min_norm = 100000
+                for n, p in list(filter(lambda p: p[1].grad is not None, self.model.named_parameters())):
                     param_norm = p.grad.data.norm(2)
+                    if param_norm.item() > max_norm:
+                        max_p = n
+                        max_norm = param_norm.item()
+                    if param_norm.item() < min_norm:
+                        min_norm = param_norm.item()
                     total_norm += param_norm.item() ** 2
                 total_norm = total_norm ** (1. / 2)
-                _print(f"Gradient Norm is {total_norm}")
+                _print(f"Total Gradient Norm is {total_norm}, Max item norm is {max_norm}, Min item norm is {min_norm}")
+                _print(f"Culprit is: {max_p}")
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
             optimizer.step()
-            batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean())
+            batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
             accuracy_drop.append(batch_accuracy)
             epoch_accuracy_drop += batch_accuracy
             if batch_idx % log_every == 0 and batch_idx > 0:

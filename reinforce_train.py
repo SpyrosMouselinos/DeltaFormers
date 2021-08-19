@@ -407,9 +407,9 @@ def PolicyEvaluation(args):
                             confusion_weight=args.confusion_weight, change_weight=args.change_weight,
                             fail_weight=args.fail_weight, invalid_weight=args.invalid_weight)
     model = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
-    # if args.cont > 0:
-    #     print("Loading model...")
-    #     model.load('./results/experiment_reinforce/model_reinforce.pt')
+    if args.cont > 0:
+        print("Loading model...")
+        model.load('./results/experiment_reinforce/model_reinforce.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS)
 
@@ -427,7 +427,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1.0)
-    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=1.0)
+    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-1.0)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=20000)
