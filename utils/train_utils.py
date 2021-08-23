@@ -396,7 +396,7 @@ class ImageCLEVR_HDF5(Dataset):
     """CLEVR dataset made from Images in HDF5 format."""
 
     def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
-                 scenes_path=None, use_cache=False, return_program=True):
+                 scenes_path=None, use_cache=False, return_program=False):
         self.return_program = return_program
         self.clvr_path = clvr_path
         if split == 'train':
