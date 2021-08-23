@@ -211,15 +211,16 @@ def visual_image_matcher(split, q2index, a2index, clvr_path='data/', questions_p
 
     x_samples = []
     y_samples = []
+    p_samples = []
     question_counter = 0
     for scene_counter in trange(len(images)):
         image_index_scene = int(images[scene_counter].split('.png')[0].split(f'{split}_')[-1])
         while question_counter < len(questions):
-            image_index_question, n_tokens, q, a = single_question_parser(questions[question_counter],
-                                                                          word_replace_dict={'True': 'yes',
-                                                                                             'False': 'no'},
-                                                                          q2index=q2index,
-                                                                          a2index=a2index)
+            image_index_question, n_tokens, q, a, p = single_question_parser(questions[question_counter],
+                                                                             word_replace_dict={'True': 'yes',
+                                                                                                'False': 'no'},
+                                                                             q2index=q2index,
+                                                                             a2index=a2index)
             # Bad question Move on #
             if q is None and a is None:
                 question_counter += 1
@@ -230,7 +231,7 @@ def visual_image_matcher(split, q2index, a2index, clvr_path='data/', questions_p
                                   'question': q,
                                   })
                 y_samples.append(a)
-
+                p_samples.append(p)
                 # Increment and Loop #
                 question_counter += 1
             elif image_index_scene < image_index_question:
@@ -239,7 +240,7 @@ def visual_image_matcher(split, q2index, a2index, clvr_path='data/', questions_p
             elif image_index_scene > image_index_question:
                 # Question is for a previous image #
                 question_counter += 1
-    return x_samples, y_samples
+    return x_samples, y_samples, p_samples
 
 
 class StateCLEVR(Dataset):
@@ -249,7 +250,7 @@ class StateCLEVR(Dataset):
                  use_cache=False, return_program=False):
         self.return_program = return_program
         if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
-            with open(f'{scenes_path}/{split}_dataset.pt', 'rb')as fin:
+            with open(f'{scenes_path}/{split}_dataset.pt', 'rb') as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.translation = info['translation']
@@ -336,7 +337,7 @@ class ImageCLEVR(Dataset):
             self.transform = transforms.Compose([transforms.Resize((128, 128)),
                                                  transforms.ToTensor()])
         if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
-            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb')as fin:
+            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb') as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.q2index = info['q2index']
@@ -395,8 +396,8 @@ class ImageCLEVR_HDF5(Dataset):
     """CLEVR dataset made from Images in HDF5 format."""
 
     def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
-                 scenes_path=None, use_cache=False):
-
+                 scenes_path=None, use_cache=False, return_program=True):
+        self.return_program = return_program
         self.clvr_path = clvr_path
         if split == 'train':
             self.transform = transforms.Compose([transforms.Pad(8),
@@ -413,6 +414,12 @@ class ImageCLEVR_HDF5(Dataset):
             self.a2index = info['a2index']
             self.x = info['x']
             self.y = info['y']
+            if self.return_program:
+                try:
+                    self.p = info['p']
+                except KeyError:
+                    _print("Dataset loaded without program!\n")
+                    self.return_program = False
             _print("Dataset loaded succesfully!\n")
         else:
             self.split = split
@@ -420,16 +427,18 @@ class ImageCLEVR_HDF5(Dataset):
                 parsed_json = json.load(fin)
                 self.q2index = parsed_json['question_token_to_idx']
                 self.a2index = parsed_json['answer_token_to_idx']
-            x, y = visual_image_matcher(split, self.q2index, self.a2index, clvr_path, questions_path)
+            x, y, p = visual_image_matcher(split, self.q2index, self.a2index, clvr_path, questions_path)
             self.x = x
             self.y = y
+            self.p = p
             _print("Dataset matched succesfully!\n")
             info = {
                 'split': self.split,
                 'q2index': self.q2index,
                 'a2index': self.a2index,
                 'x': self.x,
-                'y': self.y
+                'y': self.y,
+                'p': self.p
             }
             with open(f'{clvr_path}/{self.split}_image_dataset.pt', 'wb') as fout:
                 pickle.dump(info, fout)
@@ -453,6 +462,16 @@ class ImageCLEVR_HDF5(Dataset):
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
 
+        ### Rectify Programs ###
+        if self.return_program:
+            new_p = []
+            padding = 'P'
+            for entry in self.p:
+                entry = str(entry)
+                new_entry = padding * (2500 - len(entry)) + entry
+                new_p.append(new_entry)
+            self.p = new_p
+
     def __len__(self):
         return len(self.x)
 
@@ -465,7 +484,6 @@ class ImageCLEVR_HDF5(Dataset):
         image_data = Image.fromarray(self.hdf5_file[current_image_index], 'RGB')
         image = self.transform(image_data)
         answer = self.y[idx]
+        #program = self.p[idx]
 
         return {'image': image, 'question': question}, answer
-
-

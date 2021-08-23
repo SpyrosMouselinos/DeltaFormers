@@ -501,9 +501,9 @@ class DeltaRNFP(Module):
         visual, questions = self.ve(**kwargs)
         ore = self.cn(visual)
         qst = self.seq(questions)
-        answer = self.rn(ore, qst)
+        answer, feats = self.rn(ore, qst)
 
-        return answer, None
+        return answer, None, feats
 
 
 class DeltaSQFormer(Module):

@@ -184,7 +184,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             use_cache=use_cache)
         else:
             # TODO: Change
-            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
+            train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
@@ -210,7 +210,6 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         _print(f"Loading Model of type: {config['model_architecture']}\n")
         model = model.to(device)
         model.train()
-        # TODO: Change this!
         optimizer = torch.optim.AdamW(params=model.parameters(), lr=config['lr'], weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=config['scheduler_step_size'],
                                                     gamma=config['scheduler_gamma'])
@@ -323,15 +322,15 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_rn')
-    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_rn.yaml')
+    parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_fp')
+    parser.add_argument('--config', type=str, help='The path to the config file', default='./config_fp.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training', default=None)
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
-    parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
+    parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=1)
     parser.add_argument('--freeze_exponential_growth', type=int, help='if to stay on same lr uppon resume', default=0)
     args = parser.parse_args()
 

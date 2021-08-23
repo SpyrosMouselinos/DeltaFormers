@@ -23,7 +23,7 @@ num_questions_per_image: 10
 
 max_epochs: 180
 clip_grad_norm: 50
-batch_size: 12
+batch_size: 640
 lr: 0.000005
 max_lr: 0.0005
 max_batch_size: 640
@@ -33,12 +33,12 @@ scheduler_gamma: 2
 bs_scheduler_gamma: 1
 log_every: 500
 validate_every: 20000
-early_stopping: 10
+early_stopping: 15
 
 
 g_layers: [512,512,512,512]
 question_injection_position: 0
 f_fc1: 512
 f_fc2: 1024
-rl_dropout: 0.05
+rl_dropout: 0.5
 n_workers: 0

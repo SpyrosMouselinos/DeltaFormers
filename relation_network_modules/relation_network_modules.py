@@ -11,8 +11,8 @@ class RelationalLayerBase(Module):
         self.f_fc1 = nn.Linear(config["g_layers"][-1], config["f_fc1"])
         self.f_fc2 = nn.Linear(config["f_fc1"], config["f_fc2"])
         self.f_fc3 = nn.Linear(config["f_fc2"], config['num_output_classes'])
-        self.dropout1 = nn.Dropout(p=config["rl_dropout"])
-        self.dropout2 = nn.Dropout(p=config["rl_dropout"])
+        self.dropout = nn.Dropout(p=config["rl_dropout"])
+
 
 
 class RelationalLayer(RelationalLayerBase):
@@ -85,14 +85,10 @@ class RelationalLayer(RelationalLayerBase):
         """f"""
         x_f = self.f_fc1(x_g)
         x_f = F.relu(x_f)
-        x_f = self.dropout1(x_f)
-
         x_f = self.f_fc2(x_f)
-        x_f = F.relu(x_f)
-        feats = self.dropout2(x_f)
-
-        x_f = self.f_fc3(feats)
-
+        feats = F.relu(x_f)
+        x_f = self.dropout(feats)
+        x_f = self.f_fc3(x_f)
         return F.log_softmax(x_f, dim=1), feats
 
 
