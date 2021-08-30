@@ -1,0 +1,44 @@
+model_architecture: DeltaRN
+
+max_objects_per_scene: 10
+max_question_tokens_per_scene: 50
+question_vocabulary_size: 93
+embedding_dim: 32
+hidden_dim: 256
+inter_dim: 256
+num_token_types: 3
+num_attention_heads: 8
+num_bert_layers: 5
+num_output_classes: 28
+use_bidirectional_encoder: 0
+
+num_colors: 8
+num_shapes: 5
+num_materials: 2
+num_sizes: 2
+num_positions: 3
+num_scene_positions: 4
+num_questions_per_image: 10
+
+
+max_epochs: 180
+clip_grad_norm: 50
+batch_size: 640
+lr: 0.000005
+max_lr: 0.0005
+max_batch_size: 640
+scheduler_step_size: 20
+bs_scheduler_step_size: 1000000000000000000000000
+scheduler_gamma: 2
+bs_scheduler_gamma: 1
+log_every: 500
+validate_every: 20000
+early_stopping: 15
+
+
+g_layers: [512,512,512,512]
+question_injection_position: 0
+f_fc1: 512
+f_fc2: 1024
+rl_dropout: 0.5
+n_workers: 0

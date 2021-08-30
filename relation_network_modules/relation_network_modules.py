@@ -80,14 +80,14 @@ class RelationalLayer(RelationalLayerBase):
 
         # reshape again and sum
         x_g = x_.view(b, d ** 2, self.g_layers_size[-1])
-        x_g = x_g.sum(1).squeeze(1)
+        feats = x_g.sum(1).squeeze(1)
 
         """f"""
-        x_f = self.f_fc1(x_g)
+        x_f = self.f_fc1(feats)
         x_f = F.relu(x_f)
         x_f = self.f_fc2(x_f)
-        feats = F.relu(x_f)
-        x_f = self.dropout(feats)
+        x_f = F.relu(x_f)
+        x_f = self.dropout(x_f)
         x_f = self.f_fc3(x_f)
         return F.log_softmax(x_f, dim=1), feats
 

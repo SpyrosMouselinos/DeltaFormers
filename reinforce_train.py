@@ -359,7 +359,10 @@ class ConfusionGame:
     def alter_object_positions_on_action(features, action_vector):
         object_mask = features['types'][:, :10]
         object_positions = features['object_positions']
-        av = action_vector.detach().cpu()
+        if not isinstance(action_vector, np.ndarray):
+            av = action_vector.detach().cpu()
+        else:
+            av = torch.FloatTensor(action_vector)
         # 10 first items are x perturbations #
         # 10 next items are y perturbations #
         x_change = av[:, :10] * object_mask
@@ -439,7 +442,7 @@ def PolicyEvaluation(args):
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS)
 
-    trainer.train(log_every=100, save_every=10000)
+    trainer.train(log_every=500, save_every=10000)
     # trainer.evaluate()
 
 
@@ -447,19 +450,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training',
-                        default='./results/experiment_cross_sq/model.pt')
+                        default='./results/experiment_rn/mos_epoch_164.pt')
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=10.0)
-    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.0)
-    parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=0.0)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=4.0)
+    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=2.0)
+    parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-1.0)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-2.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=20000)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.01)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.0001)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=32)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
 
