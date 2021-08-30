@@ -131,7 +131,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
-                                                                            use_cache=use_cache)
+                                                                            use_cache=use_cache, return_program=True)
         else:
             # TODO: Change this!
             train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
@@ -146,9 +146,9 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
             val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val',
                                                                           clvr_path=clvr_path,
                                                                           questions_path=questions_path,
-                                                                          scenes_path=scenes_path, use_cache=use_cache)
+                                                                          scenes_path=scenes_path, use_cache=use_cache,
+                                                                          return_program=True)
         else:
-            pass
             val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
                                                                           clvr_path=clvr_path,
                                                                           questions_path=questions_path,
@@ -181,9 +181,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
-                                                                            use_cache=use_cache)
+                                                                            use_cache=use_cache, return_program=True)
         else:
-            # TODO: Change
             train_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='train',
                                                                             clvr_path=clvr_path,
                                                                             questions_path=questions_path,
@@ -197,7 +196,8 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
             val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='val',
                                                                           clvr_path=clvr_path,
                                                                           questions_path=questions_path,
-                                                                          scenes_path=scenes_path, use_cache=use_cache)
+                                                                          scenes_path=scenes_path, use_cache=use_cache,
+                                                                          return_program=True)
         else:
             val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
                                                                           clvr_path=clvr_path,
@@ -232,6 +232,9 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     total_acc = 0.
     best_val_acc = -1
     overfit_count = -3
+    virtual_steps = 0
+    optimizer.zero_grad()
+
     log_interval = config['log_every']
     running_train_batch_index = 0
     for epoch in range(init_epoch, config['max_epochs']):
@@ -282,21 +285,38 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                 data, y_real = train_batch
                 data = kwarg_dict_to_device(data, device)
                 y_real = y_real.to(device)
-                optimizer.zero_grad()
 
                 y_pred, att, _ = model(**data)
                 loss = criterion(y_pred, y_real.squeeze(1))
                 acc = metric(y_pred, y_real.squeeze(1))
 
-                loss.backward()
-                # Gradient Clipping
-
-                if 'clip_grad_norm' not in config or config['clip_grad_norm'] == -1:
+                # Virtual Batching
+                if 'virtual_batch_scale' not in config or config['virtual_batch_scale'] == 1:
                     pass
-                elif config['clip_grad_norm'] != -1:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), config['clip_grad_norm'])
+                else:
+                    loss = loss / config['virtual_batch_scale']
 
-                optimizer.step()
+                loss.backward()
+
+                if 'virtual_batch_scale' not in config or config['virtual_batch_scale'] == 1:
+                    if 'clip_grad_norm' not in config or config['clip_grad_norm'] == -1:
+                        pass
+                    elif config['clip_grad_norm'] != -1:
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), config['clip_grad_norm'])
+                    optimizer.step()
+                    optimizer.zero_grad()
+                else:
+                    if virtual_steps == config['virtual_batch_scale']:
+                        if 'clip_grad_norm' not in config or config['clip_grad_norm'] == -1:
+                            pass
+                        elif config['clip_grad_norm'] != -1:
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), config['clip_grad_norm'])
+                        optimizer.step()
+                        optimizer.zero_grad()
+                        virtual_steps = 0
+                    else:
+                        virtual_steps += 1
+
 
                 total_loss += loss.item()
                 total_acc += acc
