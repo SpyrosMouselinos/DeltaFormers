@@ -139,7 +139,7 @@ def single_question_parser(question: dict, word_replace_dict: dict, q2index: dic
         tokenized_q = []
         for word in q.split(' '):
             if 'bullet' in word or 'butterfly' in word:
-                return image_index, None, None, None
+                return image_index, None, None, None, None
             elif '?' in word or ';' in word:
                 tokenized_q.append(q2index[word[:-1]])
                 tokenized_q.append(q2index[';'])
