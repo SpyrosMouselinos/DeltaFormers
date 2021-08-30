@@ -90,7 +90,7 @@ class FFNet(nn.Module):
         # mu = mu / torch.norm(mu, p=2, dim=1, keepdim=True)
         # Stds are limited to (0,1] range -> Log(Std) is limited to (-inf, 0]
         # sigma_diag = 0.00001 * torch.sigmoid(self.sigma_diag(x)) + 1e-5
-        sigma_diag = 0.001 * torch.ones_like(mu)
+        sigma_diag = 0.01 * torch.ones_like(mu)
         return mu, sigma_diag, hmat
 
     def save(self, path):
@@ -258,30 +258,31 @@ class Re1nforceTrainer:
 
             # Forward Pass #
             mu, sigma_diag, hmat = self.model(features, org_data['question'])
+            mu = torch.clamp(mu, -0.35, 0.35)
             cov_mat = torch.diag_embed(sigma_diag)
             m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
             mixed_actions = m.sample()
-            #
+
             # # Calc Reward #
             rewards, confusion_rewards, _, _, _ = self.game.get_rewards(mixed_actions)
             loss = -m.log_prob(mixed_actions) * torch.FloatTensor(rewards).squeeze(1).to(self.device)
-            loss = loss.mean()
+            loss =  loss.mean()
             #
-            mask_1 = 1.0 * org_data['types'][:, :10].eq(1) # Normal mask
-            # # Magnitude Loss #
-            # X #
+            # mask_1 = 1.0 * org_data['types'][:, :10].eq(1) # Normal mask
+            # # # Magnitude Loss #
+            # # X #
             _x = mu[:, :10]
             _y = mu[:, 10:]
-
-            mag_loss_over_x = F.relu(_x - 0.5)
-            mag_loss_under_x = F.relu(-1 * (_x + 0.5))
-            mag_loss_x = mag_loss_over_x + mag_loss_under_x
-            mag_loss_x = mag_loss_x * mask_1
-            mag_loss_over_y = F.relu(_y - 0.5)
-            mag_loss_under_y = F.relu(-1 * (_y + 0.5))
-            mag_loss_y = mag_loss_over_y + mag_loss_under_y
-            mag_loss_y = mag_loss_y * mask_1
-            mag_loss = mag_loss_x.mean() + mag_loss_y.mean()
+            #
+            # mag_loss_over_x = F.relu(_x - 0.5)
+            # mag_loss_under_x = F.relu(-1 * (_x + 0.5))
+            # mag_loss_x = mag_loss_over_x + mag_loss_under_x
+            # mag_loss_x = mag_loss_x * mask_1
+            # mag_loss_over_y = F.relu(_y - 0.5)
+            # mag_loss_under_y = F.relu(-1 * (_y + 0.5))
+            # mag_loss_y = mag_loss_over_y + mag_loss_under_y
+            # mag_loss_y = mag_loss_y * mask_1
+            # mag_loss = mag_loss_x.mean() + mag_loss_y.mean()
 
             # # Auxilliary Identification Loss #
             mask_0 = 1.0 * org_data['types'][:, :10].eq(0)  # Reverse mask
@@ -291,15 +292,15 @@ class Re1nforceTrainer:
             useless_actions_loss = useless_actions_loss.sum(dim=1).mean()
 
             # Correct number of items - Trainable #
-            noi = 1.0 * org_data['types'][:, :10].eq(1)
-            noi = noi.cpu()
-            noi = noi.long()
-            noi = noi.sum(dim=1)
-            noi = noi.cuda()
-            how_many_loss = acc_loss(hmat, noi - 2)
+            # noi = 1.0 * org_data['types'][:, :10].eq(1)
+            # noi = noi.cpu()
+            # noi = noi.long()
+            # noi = noi.sum(dim=1)
+            # noi = noi.cuda()
+            # how_many_loss = acc_loss(hmat, noi - 2)
 
             # total loss #
-            total_loss = loss + 20 * mag_loss + useless_actions_loss + how_many_loss
+            total_loss = loss + useless_actions_loss
             # total_loss = how_many_loss
             # Null Grad #
             optimizer.zero_grad()
@@ -308,12 +309,12 @@ class Re1nforceTrainer:
                 print(
                     f"Total Loss: {total_loss.detach().cpu().item()}")
                 print(
-                    f"Total Loss: {total_loss.detach().cpu().item()} | Loss: {loss.detach().cpu().item()} | Mag Loss: {mag_loss.detach().cpu().item()} |"
-                    f" UAL : {useless_actions_loss.detach().cpu().item()} | Acc Loss: {how_many_loss.detach().cpu().item()}")
+                    f"Total Loss: {total_loss.detach().cpu().item()} | Loss: {loss.detach().cpu().item()} "  # | Mag Loss: {mag_loss.detach().cpu().item()} |"
+                    f" UAL : {useless_actions_loss.detach().cpu().item()} ")  # | Acc Loss: {how_many_loss.detach().cpu().item()}")
                 print(
                     f"Actions Max : {torch.max(mixed_actions)} | Actions Avg: {torch.mean(mixed_actions)} | Actions Min: {torch.min(mixed_actions)}")
 
-            #torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
             optimizer.step()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
             # batch_accuracy = accuracy_metric(hmat, noi - 2)
