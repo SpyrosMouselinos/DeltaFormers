@@ -260,28 +260,27 @@ class Re1nforceTrainer:
             mu, sigma_diag, hmat = self.model(features, org_data['question'])
             cov_mat = torch.diag_embed(sigma_diag)
             m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
-            mixed_actions = m.sample()
-            #
+            mixed_actions = m.sample().clamp(-0.3, 0.3)
+
             # # Calc Reward #
-            rewards, confusion_rewards, _, _, _ = self.game.get_rewards(mixed_actions)
-            loss = -m.log_prob(mixed_actions) * torch.FloatTensor(rewards).squeeze(1).to(self.device)
+            rewards, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
+                mixed_actions)
+            loss = -m.log_prob(mixed_actions) / 50 * torch.FloatTensor(rewards).squeeze(1).to(self.device)
             loss = loss.mean()
-            #
-            mask_1 = 1.0 * org_data['types'][:, :10].eq(1) # Normal mask
-            # # Magnitude Loss #
-            # X #
+
             _x = mu[:, :10]
             _y = mu[:, 10:]
-
-            mag_loss_over_x = F.relu(_x - 0.5)
-            mag_loss_under_x = F.relu(-1 * (_x + 0.5))
-            mag_loss_x = mag_loss_over_x + mag_loss_under_x
-            mag_loss_x = mag_loss_x * mask_1
-            mag_loss_over_y = F.relu(_y - 0.5)
-            mag_loss_under_y = F.relu(-1 * (_y + 0.5))
-            mag_loss_y = mag_loss_over_y + mag_loss_under_y
-            mag_loss_y = mag_loss_y * mask_1
-            mag_loss = mag_loss_x.mean() + mag_loss_y.mean()
+            # # # Magnitude Loss #
+            # mask_1 = 1.0 * org_data['types'][:, :10].eq(1)  # Normal mask
+            # mag_loss_over_x = F.relu(_x - 0.5)
+            # mag_loss_under_x = F.relu(-1 * (_x + 0.5))
+            # mag_loss_x = mag_loss_over_x + mag_loss_under_x
+            # mag_loss_x = mag_loss_x * mask_1
+            # mag_loss_over_y = F.relu(_y - 0.5)
+            # mag_loss_under_y = F.relu(-1 * (_y + 0.5))
+            # mag_loss_y = mag_loss_over_y + mag_loss_under_y
+            # mag_loss_y = mag_loss_y * mask_1
+            # mag_loss = mag_loss_x.mean() + mag_loss_y.mean()
 
             # # Auxilliary Identification Loss #
             mask_0 = 1.0 * org_data['types'][:, :10].eq(0)  # Reverse mask
@@ -299,29 +298,29 @@ class Re1nforceTrainer:
             how_many_loss = acc_loss(hmat, noi - 2)
 
             # total loss #
-            total_loss = loss + 20 * mag_loss + useless_actions_loss + how_many_loss
+            total_loss = loss + useless_actions_loss + how_many_loss
             # total_loss = how_many_loss
             # Null Grad #
-            optimizer.zero_grad()
+
             total_loss.backward()
-            if batch_idx % 10 == 0:
-                print(
+            if batch_idx % log_every == 0 and batch_idx > 0:
+                _print(
                     f"Total Loss: {total_loss.detach().cpu().item()}")
-                print(
-                    f"Total Loss: {total_loss.detach().cpu().item()} | Loss: {loss.detach().cpu().item()} | Mag Loss: {mag_loss.detach().cpu().item()} |"
+                _print(
+                    f"Total Loss: {total_loss.detach().cpu().item()} | Loss: {loss.detach().cpu().item()} |"
                     f" UAL : {useless_actions_loss.detach().cpu().item()} | Acc Loss: {how_many_loss.detach().cpu().item()}")
-                print(
+                _print(
                     f"Actions Max : {torch.max(mixed_actions)} | Actions Avg: {torch.mean(mixed_actions)} | Actions Min: {torch.min(mixed_actions)}")
 
-            #torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
             optimizer.step()
+            optimizer.zero_grad()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
-            # batch_accuracy = accuracy_metric(hmat, noi - 2)
             accuracy_drop.append(batch_accuracy)
             epoch_accuracy_drop += batch_accuracy
             if batch_idx % log_every == 0 and batch_idx > 0:
                 _print(
-                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-10:].mean()}%")
+                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}%")
             if batch_idx % save_every == 0 and batch_idx > 0:
                 self.model.save('./results/experiment_reinforce/model_reinforce.pt')
             batch_idx += 1
