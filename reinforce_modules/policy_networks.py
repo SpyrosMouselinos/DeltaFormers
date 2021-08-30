@@ -6,9 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import torchvision
 from torch.distributions import MultivariateNormal
-
-from bandit_train import bird_eye_view
 
 
 def kwarg_dict_to_device(data_obj, device):
@@ -22,9 +21,19 @@ def _print(something):
     print(something, flush=True)
     return
 
+
 def accuracy_metric(y_pred, y_true):
     acc = (y_pred.argmax(1) == y_true).float().detach().cpu().numpy()
     return float(100 * acc.sum() / len(acc))
+
+
+class EmptyNetwork(nn.Module):
+    def __init__(self):
+        super(EmptyNetwork, self).__init__()
+
+    def forward(self, x):
+        return x
+
 
 class QuestionReintroduce(nn.Module):
     def __init__(self, input_size, hidden_size, reverse_input=False):
@@ -64,7 +73,7 @@ class FFNet(nn.Module):
         self.fc3 = nn.Linear(input_size // 2, input_size // 2)
 
         # How many are there?
-        self.hmat = nn.Linear(input_size // 2, 9) # 2 up to 10 = 9
+        self.hmat = nn.Linear(input_size // 2, 9)  # 2 up to 10 = 9
         # Output #
         self.mu = nn.Linear(input_size // 2, 20)
         # self.logsigma_diag = nn.Linear(input_size // 2, 20)
@@ -73,7 +82,7 @@ class FFNet(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
         x = F.relu(self.fc2(x), inplace=True)
-        #x = F.relu(self.fc3(x), inplace=True)
+        x = F.relu(self.fc3(x), inplace=True)
         # x = self.fc4_d(F.relu(self.fc4(x), inplace=True))
         # Means are limited to [-0.3,+0.3] Range
         mu = self.mu(x)
@@ -81,8 +90,54 @@ class FFNet(nn.Module):
         # mu = mu / torch.norm(mu, p=2, dim=1, keepdim=True)
         # Stds are limited to (0,1] range -> Log(Std) is limited to (-inf, 0]
         # sigma_diag = 0.00001 * torch.sigmoid(self.sigma_diag(x)) + 1e-5
-        sigma_diag = 0.01 * torch.ones_like(mu)
+        sigma_diag = 0.001 * torch.ones_like(mu)
         return mu, sigma_diag, hmat
+
+    def save(self, path):
+        torch.save(self.state_dict(), path)
+        if os.path.exists(path):
+            return True
+        else:
+            return False
+
+    def load(self, path):
+        self.load_state_dict(torch.load(path))
+        return
+
+
+class FeatureConvNet(nn.Module):
+    def __init__(self):
+        super(FeatureConvNet, self).__init__()
+        self.resnet_base = self.__build_resnet_base__(3, True)
+        self.conv1 = nn.Conv2d(256, 4, (3, 3))
+        self.flat = nn.Flatten()
+        self.reduce = nn.Linear(4 * 6 * 6, 128)
+
+    def __build_resnet_base__(self, stage=3, frozen=True):
+        whole_cnn = getattr(torchvision.models, 'resnet34')(pretrained=True)
+        layers = [
+            whole_cnn.conv1,
+            whole_cnn.bn1,
+            whole_cnn.relu,
+            whole_cnn.maxpool,
+        ]
+        for i in range(stage):
+            name = 'layer%d' % (i + 1)
+            layers.append(getattr(whole_cnn, name))
+        cnn = torch.nn.Sequential(*layers)
+        if frozen:
+            cnn.eval()
+        else:
+            cnn.train()
+        return cnn
+
+    def forward(self, image):
+        x = image
+        x = self.resnet_base(x)
+        x = F.relu(self.conv1(x))
+        x = self.flat(x)
+        x = self.reduce(x)
+        return x
 
     def save(self, path):
         torch.save(self.state_dict(), path)
@@ -104,16 +159,48 @@ class PolicyNet(nn.Module):
         self.reverse_input = reverse_input
         self.dropout = dropout
         self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
-        self.final_model = FFNet(128, dropout)
+        self.final_model = FFNet(hidden_size + 128, dropout)
 
     def forward(self, x, q):
         _, (q_summary, _) = self.question_model(q)
         q_summary = torch.squeeze(q_summary, 0)
         # x = x / torch.norm(x, 2, 1, True)
         # q_summary = self.layer_norm_q(q_summary)
-        #mix = torch.cat([x, q_summary], 1)
+        mix = torch.cat([x, q_summary], 1)
+        mu, sigma_diag, hmat = self.final_model(mix)
+        return mu, sigma_diag, hmat
 
-        mix = x
+    def save(self, path):
+        torch.save(self.state_dict(), path)
+        if os.path.exists(path):
+            return True
+        else:
+            return False
+
+    def load(self, path):
+        self.load_state_dict(torch.load(path))
+        return
+
+
+class ImageNetPolicyNet(nn.Module):
+    def __init__(self, input_size, hidden_size, dropout=0.0, reverse_input=False):
+        super(ImageNetPolicyNet, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.reverse_input = reverse_input
+        self.dropout = dropout
+        self.image_preprocess_model = FeatureConvNet()
+        self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
+        self.final_model = FFNet(hidden_size + 128, dropout)
+
+    def forward(self, x, q):
+        _, (q_summary, _) = self.question_model(q)
+        q_summary = torch.squeeze(q_summary, 0)
+        # x = x / torch.norm(x, 2, 1, True)
+        # q_summary = self.layer_norm_q(q_summary)
+
+        x = self.image_preprocess_model(x)
+        mix = torch.cat([x, q_summary], 1)
         mu, sigma_diag, hmat = self.final_model(mix)
         return mu, sigma_diag, hmat
 
@@ -171,29 +258,39 @@ class Re1nforceTrainer:
 
             # Forward Pass #
             mu, sigma_diag, hmat = self.model(features, org_data['question'])
-            # cov_mat = torch.diag_embed(sigma_diag)
-            # m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
-            # mixed_actions = m.sample()
+            cov_mat = torch.diag_embed(sigma_diag)
+            m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
+            mixed_actions = m.sample()
             #
             # # Calc Reward #
-            # rewards, confusion_rewards, _, _, _ = self.game.get_rewards(mixed_actions)
-            # loss = -m.log_prob(mixed_actions) * torch.FloatTensor(rewards).squeeze(1).to(self.device)
-            # loss = loss.mean()
+            rewards, confusion_rewards, _, _, _ = self.game.get_rewards(mixed_actions)
+            loss = -m.log_prob(mixed_actions) * torch.FloatTensor(rewards).squeeze(1).to(self.device)
+            loss = loss.mean()
             #
+            mask_1 = 1.0 * org_data['types'][:, :10].eq(1) # Normal mask
             # # Magnitude Loss #
-            # mag_loss_over = F.relu(mixed_actions - 0.5)
-            # mag_loss_under = F.relu(-1 * (mixed_actions + 0.5))
-            # mag_loss = mag_loss_over + mag_loss_under
-            # mag_loss = mag_loss.mean()
-            #
-            # # Auxilliary Identification Loss #
-            # mask = 1.0 * org_data['types'][:, :10].eq(0)  # 0 where item / 1 elsewhere
-            # useless_actions_x = torch.abs(mixed_actions[:, :10]) * mask
-            # useless_actions_y = torch.abs(mixed_actions[:, 10:]) * mask
-            # useless_actions_loss = useless_actions_x + useless_actions_y
-            # useless_actions_loss = useless_actions_loss.sum(dim=1).mean()
+            # X #
+            _x = mu[:, :10]
+            _y = mu[:, 10:]
 
-            # Correct number of items #
+            mag_loss_over_x = F.relu(_x - 0.5)
+            mag_loss_under_x = F.relu(-1 * (_x + 0.5))
+            mag_loss_x = mag_loss_over_x + mag_loss_under_x
+            mag_loss_x = mag_loss_x * mask_1
+            mag_loss_over_y = F.relu(_y - 0.5)
+            mag_loss_under_y = F.relu(-1 * (_y + 0.5))
+            mag_loss_y = mag_loss_over_y + mag_loss_under_y
+            mag_loss_y = mag_loss_y * mask_1
+            mag_loss = mag_loss_x.mean() + mag_loss_y.mean()
+
+            # # Auxilliary Identification Loss #
+            mask_0 = 1.0 * org_data['types'][:, :10].eq(0)  # Reverse mask
+            useless_actions_x = torch.abs(_x) * mask_0
+            useless_actions_y = torch.abs(_y) * mask_0
+            useless_actions_loss = useless_actions_x + useless_actions_y
+            useless_actions_loss = useless_actions_loss.sum(dim=1).mean()
+
+            # Correct number of items - Trainable #
             noi = 1.0 * org_data['types'][:, :10].eq(1)
             noi = noi.cpu()
             noi = noi.long()
@@ -202,29 +299,29 @@ class Re1nforceTrainer:
             how_many_loss = acc_loss(hmat, noi - 2)
 
             # total loss #
-            #total_loss = loss + mag_loss + useless_actions_loss + how_many_loss
-            total_loss = how_many_loss
+            total_loss = loss + 20 * mag_loss + useless_actions_loss + how_many_loss
+            # total_loss = how_many_loss
             # Null Grad #
             optimizer.zero_grad()
             total_loss.backward()
-            # if batch_idx % 10 == 0:
-            #     print(
-            #         f"Total Loss: {total_loss.detach().cpu().item()}")
-                # print(
-                #     f"Total Loss: {total_loss.detach().cpu().item()} | Loss: {loss.detach().cpu().item()} | Mag Loss: {mag_loss.detach().cpu().item()} |"
-                #     f" UAL : {useless_actions_loss.detach().cpu().item()} | Acc Loss: {how_many_loss.detach().cpu().item()}")
-                #print(
-                #    f"Actions Max : {torch.max(mixed_actions)} | Actions Avg: {torch.mean(mixed_actions)} | Actions Min: {torch.min(mixed_actions)}")
+            if batch_idx % 10 == 0:
+                print(
+                    f"Total Loss: {total_loss.detach().cpu().item()}")
+                print(
+                    f"Total Loss: {total_loss.detach().cpu().item()} | Loss: {loss.detach().cpu().item()} | Mag Loss: {mag_loss.detach().cpu().item()} |"
+                    f" UAL : {useless_actions_loss.detach().cpu().item()} | Acc Loss: {how_many_loss.detach().cpu().item()}")
+                print(
+                    f"Actions Max : {torch.max(mixed_actions)} | Actions Avg: {torch.mean(mixed_actions)} | Actions Min: {torch.min(mixed_actions)}")
 
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
+            #torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
             optimizer.step()
-            #batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
-            batch_accuracy = accuracy_metric(hmat, noi - 2)
+            batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
+            # batch_accuracy = accuracy_metric(hmat, noi - 2)
             accuracy_drop.append(batch_accuracy)
             epoch_accuracy_drop += batch_accuracy
             if batch_idx % log_every == 0 and batch_idx > 0:
                 _print(
-                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop).mean()}%")
+                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-10:].mean()}%")
             if batch_idx % save_every == 0 and batch_idx > 0:
                 self.model.save('./results/experiment_reinforce/model_reinforce.pt')
             batch_idx += 1
@@ -272,10 +369,10 @@ class Re1nforceTrainer:
             # m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
             # mixed_actions = m.sample()
             # Calc Reward #
-            #rewards, confusion_rewards, _, altered_scene, _ = self.game.get_rewards(mixed_actions)
-            #batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
+            # rewards, confusion_rewards, _, altered_scene, _ = self.game.get_rewards(mixed_actions)
+            # batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
             total_accuracy_drop += accuracy_metric(hmat, noi - 2)
-            #agent_choices.append(mixed_actions)
+            # agent_choices.append(mixed_actions)
             batch_idx += 1
             # if batch_accuracy > 0:
             #     bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),

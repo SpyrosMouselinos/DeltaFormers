@@ -320,78 +320,6 @@ class StateCLEVR(Dataset):
             return self.x[idx], self.y[idx]
 
 
-class ImageCLEVR(Dataset):
-    """CLEVR dataset made from Images."""
-
-    def __init__(self, config=None, split='val', use_cache=False, clvr_path='data/', questions_path='data/',
-                 scenes_path=None):
-        self.use_cache = use_cache
-        self.clvr_path = clvr_path
-        if split == 'train':
-            self.transform = transforms.Compose([transforms.Resize((128, 128)),
-                                                 transforms.Pad(8),
-                                                 transforms.RandomCrop((128, 128)),
-                                                 transforms.RandomRotation(2.8),  # .05 rad
-                                                 transforms.ToTensor()])
-        else:
-            self.transform = transforms.Compose([transforms.Resize((128, 128)),
-                                                 transforms.ToTensor()])
-        if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
-            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb') as fin:
-                info = pickle.load(fin)
-            self.split = info['split']
-            self.q2index = info['q2index']
-            self.a2index = info['a2index']
-            self.x = info['x']
-            self.y = info['y']
-            _print("Dataset loaded succesfully!\n")
-        else:
-            self.split = split
-            with open(f'{questions_path}/vocab.json', 'r') as fin:
-                parsed_json = json.load(fin)
-                self.q2index = parsed_json['question_token_to_idx']
-                self.a2index = parsed_json['answer_token_to_idx']
-            x, y = visual_image_matcher(split, self.q2index, self.a2index, clvr_path, questions_path)
-            self.x = x
-            self.y = y
-            _print("Dataset loaded succesfully!...Saving\n")
-            info = {
-                'split': self.split,
-                'q2index': self.q2index,
-                'a2index': self.a2index,
-                'x': self.x,
-                'y': self.y
-            }
-            with open(f'{clvr_path}/{self.split}_image_dataset.pt', 'wb') as fout:
-                pickle.dump(info, fout)
-
-        self.cached_images = {}
-
-    def __len__(self):
-        return len(self.x)
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        current_image_fn = self.x[idx]['image_filename']
-        question = self.x[idx]['question']
-        if self.use_cache:
-            if current_image_fn not in self.cached_images:
-                image = Image.open(self.clvr_path + f'/images/{self.split}/{current_image_fn}').convert('RGB')
-                image = self.transform(image)
-                self.cached_images.update({current_image_fn: image})
-            else:
-                image = self.cached_images[current_image_fn]
-        else:
-            image = Image.open(self.clvr_path + f'/images/{self.split}/{current_image_fn}').convert('RGB')
-            image = self.transform(image)
-
-        answer = self.y[idx]
-
-        return {'image': image, 'question': question}, answer
-
-
 class ImageCLEVR_HDF5(Dataset):
     """CLEVR dataset made from Images in HDF5 format."""
 
@@ -399,13 +327,16 @@ class ImageCLEVR_HDF5(Dataset):
                  scenes_path=None, use_cache=False, return_program=False):
         self.return_program = return_program
         self.clvr_path = clvr_path
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
         if split == 'train':
             self.transform = transforms.Compose([transforms.Pad(8),
                                                  transforms.RandomCrop((128, 128)),
                                                  transforms.RandomRotation(2.8),  # .05 rad
-                                                 transforms.ToTensor()])
+                                                 transforms.ToTensor(),
+                                                 normalize])
         else:
-            self.transform = transforms.Compose([transforms.ToTensor()])
+            self.transform = transforms.Compose([transforms.ToTensor(), normalize])
         if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
             with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb') as fin:
                 info = pickle.load(fin)
@@ -484,6 +415,117 @@ class ImageCLEVR_HDF5(Dataset):
         image_data = Image.fromarray(self.hdf5_file[current_image_index], 'RGB')
         image = self.transform(image_data)
         answer = self.y[idx]
-        #program = self.p[idx]
+        # program = self.p[idx]
+
+        return {'image': image, 'question': question}, answer
+
+
+class MixCLEVR_HDF5(Dataset):
+    def __init__(self, config=None, split='val', scenes_path='data/', clvr_path='data/', questions_path='data/',
+                 use_cache=False, return_program=False):
+        self.return_program = return_program
+        self.split = split
+        self.clvr_path = clvr_path
+        self.state_ds = StateCLEVR(config=None, split=split, scenes_path=scenes_path, questions_path=questions_path,
+                                   clvr_path=clvr_path, use_cache=use_cache, return_program=True)
+        self.image_ds = ImageCLEVR_HDF5(config=None, split=split, clvr_path=clvr_path, questions_path=questions_path,
+                                        scenes_path=scenes_path, use_cache=use_cache, return_program=return_program)
+
+        if len(self.state_ds) != len(self.image_ds):
+            print("Oops")
+        self.max_data_length = min(len(self.state_ds), len(self.image_ds))
+
+        # assert len(self.state_ds) == len(self.image_ds)
+
+    def __len__(self):
+        return len(self.image_ds.x)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        if idx > self.max_data_length:
+            raise StopIteration
+        full_state = self.state_ds.x[idx]
+        assert (full_state['question'] == self.image_ds.x[idx]['question']).all()
+        current_image_fn = self.image_ds.x[idx]['image_filename']
+        current_image_index = int(current_image_fn.split('.png')[0].split(f'{self.split}_')[-1])
+        image_data = Image.fromarray(self.image_ds.hdf5_file[current_image_index], 'RGB')
+        image = self.image_ds.transform(image_data)
+        answer = self.state_ds.y[idx]
+        assert answer == self.image_ds.y[idx]
+        program = self.state_ds.p[idx]
+
+        return (full_state, {'image': image, 'question': full_state['question']}), answer, program
+
+
+class ImageCLEVR(Dataset):
+    """CLEVR dataset made from Images."""
+
+    def __init__(self, config=None, split='val', use_cache=False, clvr_path='data/', questions_path='data/',
+                 scenes_path=None):
+        self.use_cache = use_cache
+        self.clvr_path = clvr_path
+        if split == 'train':
+            self.transform = transforms.Compose([transforms.Resize((128, 128)),
+                                                 transforms.Pad(8),
+                                                 transforms.RandomCrop((128, 128)),
+                                                 transforms.RandomRotation(2.8),  # .05 rad
+                                                 transforms.ToTensor()])
+        else:
+            self.transform = transforms.Compose([transforms.Resize((128, 128)),
+                                                 transforms.ToTensor()])
+        if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
+            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb') as fin:
+                info = pickle.load(fin)
+            self.split = info['split']
+            self.q2index = info['q2index']
+            self.a2index = info['a2index']
+            self.x = info['x']
+            self.y = info['y']
+            _print("Dataset loaded succesfully!\n")
+        else:
+            self.split = split
+            with open(f'{questions_path}/vocab.json', 'r') as fin:
+                parsed_json = json.load(fin)
+                self.q2index = parsed_json['question_token_to_idx']
+                self.a2index = parsed_json['answer_token_to_idx']
+            x, y = visual_image_matcher(split, self.q2index, self.a2index, clvr_path, questions_path)
+            self.x = x
+            self.y = y
+            _print("Dataset loaded succesfully!...Saving\n")
+            info = {
+                'split': self.split,
+                'q2index': self.q2index,
+                'a2index': self.a2index,
+                'x': self.x,
+                'y': self.y
+            }
+            with open(f'{clvr_path}/{self.split}_image_dataset.pt', 'wb') as fout:
+                pickle.dump(info, fout)
+
+        self.cached_images = {}
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        current_image_fn = self.x[idx]['image_filename']
+        question = self.x[idx]['question']
+        if self.use_cache:
+            if current_image_fn not in self.cached_images:
+                image = Image.open(self.clvr_path + f'/images/{self.split}/{current_image_fn}').convert('RGB')
+                image = self.transform(image)
+                self.cached_images.update({current_image_fn: image})
+            else:
+                image = self.cached_images[current_image_fn]
+        else:
+            image = Image.open(self.clvr_path + f'/images/{self.split}/{current_image_fn}').convert('RGB')
+            image = self.transform(image)
+
+        answer = self.y[idx]
 
         return {'image': image, 'question': question}, answer

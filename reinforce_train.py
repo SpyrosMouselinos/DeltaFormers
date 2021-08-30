@@ -5,6 +5,7 @@ import os.path as osp
 import sys
 
 import numpy as np
+import torch.nn
 import yaml
 
 sys.path.insert(0, osp.abspath('.'))
@@ -12,11 +13,11 @@ sys.path.insert(0, osp.abspath('.'))
 import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
-from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5
+from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5, MixCLEVR_HDF5
 from oracle.Oracle_CLEVR import Oracle
 import matplotlib.pyplot as plt
 import seaborn as sns
-from reinforce_modules.policy_networks import PolicyNet, Re1nforceTrainer
+from reinforce_modules.policy_networks import Re1nforceTrainer, ImageNetPolicyNet, EmptyNetwork, PolicyNet
 
 sns.set_style('darkgrid')
 
@@ -30,9 +31,9 @@ AVAILABLE_DATASETS = {
     'DeltaRN': [StateCLEVR],
     'DeltaSQFormer': [StateCLEVR],
     'DeltaQFormer': [StateCLEVR],
-    'DeltaSQFormerCross': [StateCLEVR],
+    'DeltaSQFormerCross': [StateCLEVR, MixCLEVR_HDF5],
     'DeltaSQFormerDisentangled': [StateCLEVR],
-    'DeltaSQFormerLinear': [StateCLEVR],
+    'DeltaSQFormerLinear': [StateCLEVR, MixCLEVR_HDF5],
     'DeltaRNFP': [ImageCLEVR, ImageCLEVR_HDF5],
 }
 
@@ -175,7 +176,7 @@ def accuracy_metric(y_pred, y_true):
 
 def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                    use_cache=False, batch_size=128,
-                   use_hdf5=False):
+                   use_hdf5=False, mode='state'):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -184,12 +185,17 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
     with open(config, 'r') as fin:
         config = yaml.load(fin, Loader=yaml.FullLoader)
 
-    model = AVAILABLE_MODELS[config['model_architecture']](config)
-    _print(f"Loading Model of type: {config['model_architecture']}\n")
-    model = load(path=load_from, model=model)
+    if mode == 'state':
+        model = AVAILABLE_MODELS[config['model_architecture']](config)
+        _print(f"Loading Model of type: {config['model_architecture']}\n")
+        model = load(path=load_from, model=model)
+    elif mode == 'imagenet':
+        model = EmptyNetwork()
+    else:
+        raise NotImplementedError
+
     model = model.to(device)
     model.eval()
-
     config_fool = f'./results/experiment_linear_sq/config.yaml'
     with open(config_fool, 'r') as fin:
         config_fool = yaml.load(fin, Loader=yaml.FullLoader)
@@ -199,15 +205,19 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
     model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
     model_fool = model_fool.to(device)
     model_fool.eval()
-
-    val_set = AVAILABLE_DATASETS[config['model_architecture']][0](config=config, split='val',
-                                                                  clvr_path=clvr_path,
-                                                                  questions_path=questions_path,
-                                                                  scenes_path=scenes_path, use_cache=use_cache,
-                                                                  return_program=True)
+    if mode == 'state':
+        data_choice = 0
+    else:
+        data_choice = 1
+    val_set = AVAILABLE_DATASETS[config['model_architecture']][data_choice](config=config, split='val',
+                                                                            clvr_path=clvr_path,
+                                                                            questions_path=questions_path,
+                                                                            scenes_path=scenes_path,
+                                                                            use_cache=use_cache,
+                                                                            return_program=True)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
-                                                 num_workers=0, shuffle=True, drop_last=True)
+                                                 num_workers=0, shuffle=bool(args.mode == 'state'), drop_last=True)
 
     _print(f"Loader has : {len(val_dataloader)} batches\n")
     return model, model_fool, val_dataloader
@@ -298,6 +308,7 @@ class ConfusionGame:
                  change_weight=1.0,
                  fail_weight=-1.0,
                  invalid_weight=0.0,
+                 mode='state'
                  ):
 
         self.confusion_weight = confusion_weight
@@ -314,6 +325,7 @@ class ConfusionGame:
             self.confusion_model.eval()
         self.device = device
         self.oracle = Oracle(metadata_path='./metadata.json')
+        self.mode = mode
 
     def extract_features(self, iter_on_data):
         """
@@ -322,12 +334,22 @@ class ConfusionGame:
         """
         with torch.no_grad():
             data, y_real, programs = next(iter_on_data)
+            if self.mode != 'state':
+                data, image_data = data
+                self.org_image_data = image_data
             self.org_data = data
             self.org_answers = y_real
             self.programs = programs
-            data = kwarg_dict_to_device(data, self.device)
-            y_preds, _, y_feats = self.testbed_model(**data)
-            self.initial_predictions = y_preds.detach().cpu().argmax(1)
+            if self.mode != 'state':
+                image_data = kwarg_dict_to_device(image_data, self.device)
+                data = kwarg_dict_to_device(data, self.device)
+                if self.mode == 'imagenet':
+                    y_feats = image_data['image']
+                else:
+                    _, _, y_feats = self.testbed_model(**image_data)
+            else:
+                data = kwarg_dict_to_device(data, self.device)
+                _, _, y_feats = self.testbed_model(**data)
 
         self.features = y_feats
         self.n_features = self.features.shape[-1]
@@ -387,7 +409,7 @@ class ConfusionGame:
         fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
         invalid_scene_rewards = self.invalid_weight * (1 - answer_stayed_the_same)
         self.rewards = self.confusion_weight * confusion_rewards.numpy() + (
-                self.change_weight) * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
+            self.change_weight) * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
         return self.rewards, confusion_rewards, change_rewards, scene, predictions_after
 
 
@@ -400,21 +422,26 @@ def PolicyEvaluation(args):
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
-                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS)
+                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS, mode=args.mode)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
                             confusion_weight=args.confusion_weight, change_weight=args.change_weight,
-                            fail_weight=args.fail_weight, invalid_weight=args.invalid_weight)
-    model = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+                            fail_weight=args.fail_weight, invalid_weight=args.invalid_weight, mode=args.mode)
+    if args.mode == 'state' or args.mode == 'visual':
+        model = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+    elif args.mode == 'imagenet':
+        model = ImageNetPolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+    else:
+        raise ValueError
     if args.cont > 0:
         print("Loading model...")
         model.load('./results/experiment_reinforce/model_reinforce.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS)
 
-    #trainer.train(log_every=100, save_every=10000)
-    trainer.evaluate()
+    trainer.train(log_every=5, save_every=10000)
+    # trainer.evaluate()
 
 
 if __name__ == '__main__':
@@ -433,8 +460,9 @@ if __name__ == '__main__':
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-10.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=20000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.001)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=128)
-    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=1)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=256)
+    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
+    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
 
     args = parser.parse_args()
     PolicyEvaluation(args)
