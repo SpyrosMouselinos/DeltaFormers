@@ -333,10 +333,10 @@ class Re1nforceTrainer:
         return quantized_actions
 
     def train(self, log_every=100, save_every=10_000):
-        t = 10
+        t = 100
         self.model = self.model.to(self.device)
         self.model = self.model.train()
-        optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
+        optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
 
         optimizer.zero_grad()
         accuracy_drop = []
@@ -379,11 +379,11 @@ class Re1nforceTrainer:
                 mixed_actions)
             rewards = torch.FloatTensor(rewards_).squeeze(1).to(self.device)
             #rm = rewards.mean()
-            if rewards.std().item() > 1:
-                rs = rewards.std()
-            else:
-                rs = 1
-            rewards = (rewards + 1)  / rs
+            # if rewards.std().item() > 1:
+            #     rs = rewards.std()
+            # else:
+            #     rs = 1
+            # rewards = rewards  / rs
             loss = -log_probs * rewards
             loss = loss.mean()
             total_loss = loss
@@ -393,7 +393,7 @@ class Re1nforceTrainer:
                 _print(
                     f"Total Loss: {total_loss.detach().cpu().item()} | Total Reward: {rewards_.sum()}")
 
-            # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
             optimizer.step()
             optimizer.zero_grad()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
