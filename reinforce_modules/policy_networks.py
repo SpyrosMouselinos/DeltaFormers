@@ -425,11 +425,11 @@ class Re1nforceTrainer:
             epoch_accuracy_drop += batch_accuracy
             if batch_idx % log_every == 0 and batch_idx > 0:
                 _print(
-                    f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}%")
+                    f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}%")
             if batch_idx % save_every == 0 and batch_idx > 0:
-                self.model.save(f'./results/experiment_reinforce/model_reinforce{self.name}.pt')
+                self.model.save(f'./results/experiment_reinforce/model_reinforce_{self.name}.pt')
             batch_idx += 1
-        self.model.save(f'./results/experiment_reinforce/model_reinforce{self.name}.pt')
+        self.model.save(f'./results/experiment_reinforce/model_reinforce_{self.name}.pt')
         plt.figure(figsize=(10, 10))
         plt.title('REINFORCE Accuracy Drop Progress')
         plt.plot(accuracy_drop, 'b')

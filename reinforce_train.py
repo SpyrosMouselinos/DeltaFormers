@@ -446,12 +446,11 @@ def PolicyEvaluation(args):
         raise ValueError
     if args.cont > 0:
         print("Loading model...")
-        model.load('./results/experiment_reinforce/model_reinforce1k.pt')
+        model.load(f'./results/experiment_reinforce/model_reinforce_{effective_range_name}.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name)
 
     trainer.train(log_every=500, save_every=1000)
-    trainer.evaluate(example_range=(0, 2000))
 
 
 if __name__ == '__main__':
