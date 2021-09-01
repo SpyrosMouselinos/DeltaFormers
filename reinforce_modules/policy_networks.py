@@ -379,7 +379,7 @@ class Re1nforceTrainer:
                 self.dataloader_iter = iter(self.dataloader)
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
                 _print(
-                    f"REINFORCE  Epoch {epochs_passed} | Epoch Accuracy Drop: {epoch_accuracy_drop / len(self.dataloader)}%")
+                    f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {epoch_accuracy_drop / len(self.dataloader)}%")
                 epochs_passed += 1
                 epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(self.dataloader))
                 epoch_accuracy_drop = 0

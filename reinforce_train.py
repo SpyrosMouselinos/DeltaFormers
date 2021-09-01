@@ -467,7 +467,7 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=10000)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=800_000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=128)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
