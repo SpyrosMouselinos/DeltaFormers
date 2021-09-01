@@ -247,7 +247,7 @@ class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
     def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None,
-                 use_cache=False, return_program=False):
+                 use_cache=False, return_program=False, effective_range=None):
         self.return_program = return_program
         if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
             with open(f'{scenes_path}/{split}_dataset.pt', 'rb') as fin:
@@ -256,13 +256,19 @@ class StateCLEVR(Dataset):
             self.translation = info['translation']
             self.q2index = info['q2index']
             self.a2index = info['a2index']
-            # TODO: Remove this!
-            self.x = info['x']#[0:5000]
-            self.y = info['y']#[0:5000]
+            if effective_range is None:
+                self.x = info['x']
+                self.y = info['y']
+            else:
+                self.x = info['x'][0:effective_range]
+                self.y = info['y'][0:effective_range]
 
             if self.return_program:
                 try:
-                    self.p = info['p']#[0:5000]
+                    if effective_range is None:
+                        self.p = info['p']
+                    else:
+                        self.p = info['p'][0:effective_range]
                 except KeyError:
                     print("Dataset loaded without program!\n")
                     self.return_program = False
@@ -324,7 +330,7 @@ class ImageCLEVR_HDF5(Dataset):
     """CLEVR dataset made from Images in HDF5 format."""
 
     def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
-                 scenes_path=None, use_cache=False, return_program=False):
+                 scenes_path=None, use_cache=False, return_program=False, effective_range=None):
         self.return_program = return_program
         self.clvr_path = clvr_path
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
@@ -343,11 +349,18 @@ class ImageCLEVR_HDF5(Dataset):
             self.split = info['split']
             self.q2index = info['q2index']
             self.a2index = info['a2index']
-            self.x = info['x']
-            self.y = info['y']
+            if effective_range is None:
+                self.x = info['x']
+                self.y = info['y']
+            else:
+                self.x = info['x'][0:effective_range]
+                self.y = info['y'][0:effective_range]
             if self.return_program:
                 try:
-                    self.p = info['p']
+                    if effective_range is None:
+                        self.p = info['p']
+                    else:
+                        self.p = info['p'][0:effective_range]
                 except KeyError:
                     _print("Dataset loaded without program!\n")
                     self.return_program = False
@@ -422,14 +435,14 @@ class ImageCLEVR_HDF5(Dataset):
 
 class MixCLEVR_HDF5(Dataset):
     def __init__(self, config=None, split='val', scenes_path='data/', clvr_path='data/', questions_path='data/',
-                 use_cache=False, return_program=False):
+                 use_cache=False, return_program=False, effective_range=None):
         self.return_program = return_program
         self.split = split
         self.clvr_path = clvr_path
         self.state_ds = StateCLEVR(config=None, split=split, scenes_path=scenes_path, questions_path=questions_path,
-                                   clvr_path=clvr_path, use_cache=use_cache, return_program=True)
+                                   clvr_path=clvr_path, use_cache=use_cache, return_program=True, effective_range=effective_range)
         self.image_ds = ImageCLEVR_HDF5(config=None, split=split, clvr_path=clvr_path, questions_path=questions_path,
-                                        scenes_path=scenes_path, use_cache=use_cache, return_program=return_program)
+                                        scenes_path=scenes_path, use_cache=use_cache, return_program=return_program, effective_range=effective_range)
 
         if len(self.state_ds) != len(self.image_ds):
             print("Oops")

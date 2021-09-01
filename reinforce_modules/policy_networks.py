@@ -73,8 +73,8 @@ class FFNet(nn.Module):
         self.input_size = input_size
         # Pre-Processing #
         self.fc1 = nn.Linear(input_size, input_size // 2)
-        self.fc2 = nn.Linear(input_size // 2, input_size // 2)
-        self.fc3 = nn.Linear(input_size // 2, input_size // 2)
+        # self.fc2 = nn.Linear(input_size // 2, input_size // 2)
+        # self.fc3 = nn.Linear(input_size // 2, input_size // 2)
 
         self.obj1 = nn.Linear(input_size // 2, input_size // 6)
         self.obj2 = nn.Linear(input_size // 2, input_size // 6)
@@ -130,8 +130,8 @@ class FFNet(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
-        x = F.relu(self.fc2(x), inplace=True)
-        x = F.relu(self.fc3(x), inplace=True)
+        # x = F.relu(self.fc2(x), inplace=True)
+        # x = F.relu(self.fc3(x), inplace=True)
         obj1 = F.relu(self.obj1(x), inplace=True)
         obj1 = self.d1(obj1)
         obj1x = self.obj1x(obj1)
@@ -243,6 +243,29 @@ class FeatureConvNet(nn.Module):
         return
 
 
+class BVNet(nn.Module):
+    """
+    Baseline REINFORCE - Value Calculating Network
+    """
+
+    def __init__(self, input_size):
+        super(BVNet, self).__init__()
+        self.input_size = input_size
+        self.fc1 = nn.Linear(input_size, input_size // 2)
+        self.dr1 = nn.Dropout(0.1)
+        self.fc2 = nn.Linear(input_size // 2, input_size // 4)
+        self.dr2 = nn.Dropout(0.1)
+        self.fc3 = nn.Linear(input_size // 4, 1)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x), inplace=True)
+        x = self.dr1(x)
+        x = F.relu(self.fc2(x), inplace=True)
+        x = self.dr2(x)
+        x = torch.tanh(self.fc3(x)) * 1.5
+        return x
+
+
 class PolicyNet(nn.Module):
     def __init__(self, input_size, hidden_size, dropout=0.0, reverse_input=False):
         super(PolicyNet, self).__init__()
@@ -252,6 +275,7 @@ class PolicyNet(nn.Module):
         self.dropout = dropout
         # self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
         self.final_model = FFNet(512, dropout)
+        self.value_model = BVNet(512)
 
     def forward(self, x, q):
         # _, (q_summary, _) = self.question_model(q)
@@ -261,7 +285,8 @@ class PolicyNet(nn.Module):
         # mix = torch.cat([x, q_summary], 1)
         mix = x
         sx, sy = self.final_model(mix)
-        return sx, sy
+        state_value = self.value_model(mix)
+        return sx, sy, state_value
 
     def save(self, path):
         torch.save(self.state_dict(), path)
@@ -311,7 +336,8 @@ class ImageNetPolicyNet(nn.Module):
 
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
-                 batch_tolerance=1, batch_reset=100):
+                 batch_tolerance=1, batch_reset=100, name=''):
+        self.name = name
         self.model = model
         self.game = game
         self.dataloader = dataloader
@@ -332,19 +358,19 @@ class Re1nforceTrainer:
                 quantized_actions[i, j] = effect_range[0] + action[i, j] * ((effect_range[1] - effect_range[0]) / steps)
         return quantized_actions
 
-    def train(self, log_every=100, save_every=10_000):
-        t = 100
+    def train(self, log_every=100, save_every=10_000, example_range=(0, 1000)):
+        t = 10
         self.model = self.model.to(self.device)
         self.model = self.model.train()
         optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
 
-        optimizer.zero_grad()
         accuracy_drop = []
         batch_idx = 0
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_accuracy_drop_history = []
-        # marked_batches = {}
+
+
         while batch_idx < self.training_duration:
             try:
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
@@ -360,12 +386,12 @@ class Re1nforceTrainer:
 
             # Forward Pass #
 
-            sx, sy = self.model(
+            sx, sy, state_values = self.model(
                 features, org_data['question'])
             action_probs_x = torch.distributions.Categorical(
                 torch.softmax(torch.cat([f.unsqueeze(1) for f in sx], dim=1) / t, dim=2))
             action_probs_y = torch.distributions.Categorical(
-                torch.softmax(torch.cat([f.unsqueeze(1) for f in sy], dim=1)/  t, dim=2))
+                torch.softmax(torch.cat([f.unsqueeze(1) for f in sy], dim=1) / t, dim=2))
 
             actionsx = action_probs_x.sample()
             actionsy = action_probs_y.sample()
@@ -378,13 +404,11 @@ class Re1nforceTrainer:
             rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
                 mixed_actions)
             rewards = torch.FloatTensor(rewards_).squeeze(1).to(self.device)
-            #rm = rewards.mean()
-            # if rewards.std().item() > 1:
-            #     rs = rewards.std()
-            # else:
-            #     rs = 1
-            # rewards = rewards  / rs
-            loss = -log_probs * rewards
+            advantages = rewards - state_values.squeeze(1).detach()
+
+            ploss = -log_probs * advantages
+            vloss = (state_values.squeeze(1) - rewards.detach()) ** 2
+            loss = ploss + vloss
             loss = loss.mean()
             total_loss = loss
 
@@ -403,9 +427,9 @@ class Re1nforceTrainer:
                 _print(
                     f"REINFORCE  {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}%")
             if batch_idx % save_every == 0 and batch_idx > 0:
-                self.model.save('./results/experiment_reinforce/model_reinforce.pt')
+                self.model.save(f'./results/experiment_reinforce/model_reinforce{self.name}.pt')
             batch_idx += 1
-        self.model.save('./results/experiment_reinforce/model_reinforce.pt')
+        self.model.save(f'./results/experiment_reinforce/model_reinforce{self.name}.pt')
         plt.figure(figsize=(10, 10))
         plt.title('REINFORCE Accuracy Drop Progress')
         plt.plot(accuracy_drop, 'b')
@@ -420,54 +444,50 @@ class Re1nforceTrainer:
         plt.plot(epoch_accuracy_drop_history, 'b')
         plt.ylabel("Accuracy Drop on 96% State Transformer")
         plt.xlabel("Epochs")
-        plt.savefig('./results/experiment_reinforce/epoch_progress.png')
+        plt.savefig(f'./results/experiment_reinforce/epoch_progress{self.name}.png')
         plt.show()
         plt.close()
 
-    def evaluate(self):
+    def evaluate(self, example_range=(0, 1280)):
         self.model = self.model.to(self.device)
         self.model.zero_grad()
         self.model = self.model.eval()
 
         batch_idx = 0
-        total_accuracy_drop = 0
-        agent_choices = []
+        n_burn_iterations = example_range[0] // self.batch_size
+        n_eligible_iterations = (example_range[1] - example_range[0]) // self.batch_size
+        while batch_idx < n_burn_iterations:
+            _ = next(self.dataloader_iter)
+            batch_idx += 1
 
-        while True:
+        batch_idx = 0
+        confusion = 0
+        worth_discovering = 0
+        while batch_idx < n_eligible_iterations:
             try:
                 features, org_data, y_real = self.game.extract_features(self.dataloader_iter)
             except StopIteration:
                 del self.dataloader_iter
+                self.dataloader_iter = iter(self.dataloader)
                 break
-            mu, sigma_diag, hmat = self.model(features, org_data['question'])
-            noi = 1.0 * org_data['types'][:, :10].eq(1)
-            noi = noi.cpu()
-            noi = noi.long()
-            noi = noi.sum(dim=1)
-            noi = noi.cuda()
-            # cov_mat = torch.diag_embed(sigma_diag)
-            # m = MultivariateNormal(loc=mu, covariance_matrix=cov_mat)
-            # mixed_actions = m.sample()
+            sx, sy, state_values = self.model(
+                features, org_data['question'])
+            actionsx = torch.cat([f.unsqueeze(1) for f in sx], dim=1).max(2)[1]
+            actionsy = torch.cat([f.unsqueeze(1) for f in sy], dim=1).max(2)[1]
+
+            action = torch.cat([actionsx, actionsy], dim=1)
             # Calc Reward #
-            # rewards, confusion_rewards, _, altered_scene, _ = self.game.get_rewards(mixed_actions)
-            # batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
-            total_accuracy_drop += accuracy_metric(hmat, noi - 2)
-            # agent_choices.append(mixed_actions)
+            mixed_actions = self.quantize(action)
+            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
+                mixed_actions)
+            rewards = np.squeeze(rewards_)
+            state_values = state_values.squeeze(1).detach().cpu().numpy()
+            confusion += ((rewards + 0.1) > 0).sum()
+            worth_discovering += (state_values + 0.1 > 0.05).sum()
             batch_idx += 1
-            # if batch_accuracy > 0:
-            #     bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),
-            #                   mode='before', q=0, a=0)
-            #     bird_eye_view(batch_idx, x=altered_scene, y=None, mode='after', q=None, a=None)
 
-        calc_acc_drop = total_accuracy_drop / batch_idx
+        calc_acc_drop = 100 * confusion / (example_range[1] - example_range[0])
         calc_acc_drop = round(calc_acc_drop, 3)
+        worth_disc_n = worth_discovering
         _print(f"Total Accuracy Drop : {calc_acc_drop}")
-
-        # plt.figure(figsize=(10, 10))
-        # plt.title('REINFORCE Test Accuracy Drop Progress')
-        # plt.plot(epoch_accuracy_drop_history, 'b')
-        # plt.ylabel("Accuracy Drop on 96% State Transformer")
-        # plt.xlabel("Epochs")
-        # plt.savefig('./results/experiment_reinforce/epoch_progress.png')
-        # plt.show()
-        # plt.close()
+        _print(f"Total Items Worth Discovering  : {worth_disc_n} out of {(example_range[1] - example_range[0])}")

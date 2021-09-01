@@ -176,7 +176,7 @@ def accuracy_metric(y_pred, y_true):
 
 def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                    use_cache=False, batch_size=128,
-                   use_hdf5=False, mode='state'):
+                   use_hdf5=False, mode='state', effective_range=None):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -214,10 +214,11 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
                                                                             questions_path=questions_path,
                                                                             scenes_path=scenes_path,
                                                                             use_cache=use_cache,
-                                                                            return_program=True)
+                                                                            return_program=True,
+                                                                            effective_range=effective_range)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
-                                                 num_workers=0, shuffle=bool(args.mode == 'state'), drop_last=True)
+                                                 num_workers=0, shuffle=False, drop_last=False)
 
     _print(f"Loader has : {len(val_dataloader)} batches\n")
     return model, model_fool, val_dataloader
@@ -373,7 +374,7 @@ class ConfusionGame:
         z_change = torch.zeros_like(y_change)
         change = torch.cat([x_change, y_change, z_change], dim=2)
         object_positions += change
-        return object_positions
+        return object_positions.clip(-1.0, 1.0)
 
     def step(self, action_vector):
         validity = []
@@ -416,6 +417,12 @@ class ConfusionGame:
 
 
 def PolicyEvaluation(args):
+    if args.range == -1:
+        effective_range = None
+        effective_range_name = 'all'
+    else:
+        effective_range = args.range * 1000
+        effective_range_name = f'{args.range}k'
     if osp.exists(f'./results/experiment_reinforce'):
         pass
     else:
@@ -424,7 +431,8 @@ def PolicyEvaluation(args):
     model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
-                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS, mode=args.mode)
+                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS,
+                                               mode=args.mode, effective_range=effective_range)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -438,12 +446,12 @@ def PolicyEvaluation(args):
         raise ValueError
     if args.cont > 0:
         print("Loading model...")
-        model.load('./results/experiment_reinforce/model_reinforce.pt')
+        model.load('./results/experiment_reinforce/model_reinforce1k.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
-                               train_duration=train_duration, batch_size=BS)
+                               train_duration=train_duration, batch_size=BS, name=effective_range_name)
 
-    trainer.train(log_every=500, save_every=10000)
-    # trainer.evaluate()
+    trainer.train(log_every=500, save_every=1000)
+    trainer.evaluate(example_range=(0, 2000))
 
 
 if __name__ == '__main__':
@@ -456,15 +464,16 @@ if __name__ == '__main__':
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
-    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=4.0)
-    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=2.0)
-    parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-1.0)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-2.0)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=20000)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=0.0001)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=32)
+    parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1)
+    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=10000)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=128)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
+    parser.add_argument('--range', type=int, default=-1)
 
     args = parser.parse_args()
     PolicyEvaluation(args)
