@@ -260,15 +260,15 @@ class StateCLEVR(Dataset):
                 self.x = info['x']
                 self.y = info['y']
             else:
-                self.x = info['x'][0:effective_range]
-                self.y = info['y'][0:effective_range]
+                self.x = info['x'][0:int(effective_range)]
+                self.y = info['y'][0:int(effective_range)]
 
             if self.return_program:
                 try:
                     if effective_range is None:
                         self.p = info['p']
                     else:
-                        self.p = info['p'][0:effective_range]
+                        self.p = info['p'][0:int(effective_range)]
                 except KeyError:
                     print("Dataset loaded without program!\n")
                     self.return_program = False
