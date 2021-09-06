@@ -236,13 +236,14 @@ def get_test_loader(load_from=None, clvr_path='data/', questions_path='data/', s
 
 def bird_eye_view(index, x, y, mode='before', q=None, a=None):
     if mode == 'before':
-        object_positions = x['object_positions'][0].numpy()
+        object_positions = x['object_positions'][0].numpy() * 3
         object_colors = [translation_tables['reverse_translation_color'][f] if f != 0 else None for f in
                          x['object_colors'][0].numpy()]
         object_shapes = [translation_tables['reverse_translation_shape'][f] if f != 0 else None for f in
                          x['object_shapes'][0].numpy()]
         object_materials = [translation_tables['reverse_translation_material'][f] if f != 0 else None for f in
                             x['object_materials'][0].numpy()]
+        object_materials = [((f == 'rubber') * .8) + 0.2 for f in object_materials]
         object_sizes = [translation_tables['reverse_translation_size'][f] if f != 0 else None for f in
                         x['object_sizes'][0].numpy()]
         if q is None:
@@ -257,15 +258,14 @@ def bird_eye_view(index, x, y, mode='before', q=None, a=None):
         object_positions = [f['3d_coords'] for f in x['objects']]
         object_colors = [f['color'] for f in x['objects']]
         object_shapes = [f['shape'] for f in x['objects']]
-        object_materials = [f['material'] for f in x['objects']]
+        object_materials = [((f['material'] == 'rubber') * .8) + 0.2 for f in x['objects']]
         object_sizes = [f['size'] for f in x['objects']]
         if q is None:
             q = ''
-        else:
-            q = [index2q[f] for f in q]
         if a is None:
             a = ''
         else:
+            y = index2a[y.item() + 4]
             a = index2a[a.item() + 4]
 
     mmt = {
@@ -279,7 +279,10 @@ def bird_eye_view(index, x, y, mode='before', q=None, a=None):
         'small': 6
     }
     plt.figure(figsize=(10, 10))
-    plt.title(a)
+    if mode == 'before':
+        plt.title(f'Correct Answer: {a}')
+    else:
+        plt.title(f'Correct Answer {y}, Model answered: {a}')
     made_title = ' '.join([f for f in q if (f != '<NULL>') and (f != '<START>') and (f != '<END>')])
     made_title = made_title[:len(made_title) // 2] + '\n' + made_title[len(made_title) // 2:]
     plt.suptitle(f"{made_title}")
@@ -290,11 +293,12 @@ def bird_eye_view(index, x, y, mode='before', q=None, a=None):
         except IndexError:
             continue
         if x != 0 and y != 0:
-            plt.scatter(x=x, y=y, c=object_colors[oi], s=mst[object_sizes[oi]] ** 3, marker=mmt[object_shapes[oi]])
-    plt.savefig(f"C:\\Users\\Guldan\\Desktop\\weird\\{mode}_{index}.png")
+            plt.scatter(x=x, y=y, c=object_colors[oi], s=mst[object_sizes[oi]] ** 3, marker=mmt[object_shapes[oi]],
+                        alpha=object_materials[oi])
+    plt.savefig(f"C:\\Users\\Guldan\\Desktop\\results_REINFORCE\\{mode}_{index}.png")
     plt.show()
     plt.close()
-    return
+    return q
 
 
 class ContextualStatefulBandit:

@@ -152,11 +152,23 @@ def translate_answer(answer):
 def load(path: str, model: nn.Module):
     checkpoint = torch.load(path)
     # removes 'module' from dict entries, pytorch bug #3805
-    if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
-        checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in
-                                          checkpoint['model_state_dict'].items()}
-    model.load_state_dict(checkpoint['model_state_dict'])
-    _print(f"Your model achieves {round(checkpoint['val_loss'], 4)} validation loss\n")
+    try:
+        if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
+            checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in
+                                              checkpoint['model_state_dict'].items()}
+    except KeyError:
+        if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint.keys()):
+            checkpoint = {k.replace('module.', ''): v for k, v in
+                                              checkpoint.items()}
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    except KeyError:
+        model.load_state_dict(checkpoint)
+
+    try:
+        _print(f"Your model achieves {round(checkpoint['val_loss'], 4)} validation loss\n")
+    except:
+        _print("No Loss registered")
     return model
 
 
@@ -176,7 +188,7 @@ def accuracy_metric(y_pred, y_true):
 
 def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                    use_cache=False, batch_size=128,
-                   use_hdf5=False, mode='state', effective_range=None):
+                   use_hdf5=False, mode='state', effective_range=None, mos_epoch=164):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -196,13 +208,15 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
     model = model.to(device)
     model.eval()
-    config_fool = f'./results/experiment_linear_sq/config.yaml'
+    #config_fool = f'./results/experiment_linear_sq/config.yaml'
+    config_fool = f'./results/experiment_rn/config.yaml'
     with open(config_fool, 'r') as fin:
         config_fool = yaml.load(fin, Loader=yaml.FullLoader)
 
     model_fool = AVAILABLE_MODELS[config_fool['model_architecture']](config_fool)
     _print(f"Loading Model of type: {config_fool['model_architecture']}\n")
-    model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
+    #model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
+    model_fool = load(path=f'./results/experiment_rn/mos_epoch_{mos_epoch}.pt', model=model_fool)
     model_fool = model_fool.to(device)
     model_fool.eval()
     if mode == 'state':
@@ -393,6 +407,8 @@ class ConfusionGame:
 
         return predictions_after, predictions_before, validity, scene
 
+
+
     def get_rewards(self, action_vector):
         predictions_after, predictions_before, validity, scene = self.step(action_vector=action_vector)
         predictions_before = predictions_before.unsqueeze(1)
@@ -417,6 +433,7 @@ class ConfusionGame:
 
 
 def PolicyEvaluation(args):
+    print(args.mos_epoch)
     if args.range == -1:
         effective_range = None
         effective_range_name = 'all'
@@ -432,7 +449,7 @@ def PolicyEvaluation(args):
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS,
-                                               mode=args.mode, effective_range=effective_range)
+                                               mode=args.mode, effective_range=effective_range, mos_epoch=args.mos_epoch)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -450,8 +467,8 @@ def PolicyEvaluation(args):
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name)
 
-    trainer.train(log_every=500, save_every=1000)
-
+    trainer.discover(log_every=1000, save_every=1000)
+    #trainer.evaluate(example_range=(0,1000))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -464,15 +481,16 @@ if __name__ == '__main__':
     parser.add_argument('--use_cache', type=int, help='if to use cache (only in image clever)', default=0)
     parser.add_argument('--use_hdf5', type=int, help='if to use hdf5 loader', default=0)
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1)
-    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=800_000)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=128)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=1)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
-    parser.add_argument('--range', type=int, default=-1)
+    parser.add_argument('--range', type=float, default=0)
+    parser.add_argument('--mos_epoch', type=int, default=146)
 
     args = parser.parse_args()
     PolicyEvaluation(args)

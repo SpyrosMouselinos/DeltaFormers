@@ -1,3 +1,4 @@
+import itertools
 import os
 
 import matplotlib.pyplot as plt
@@ -7,6 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
+
+from bandit_train import bird_eye_view
 
 
 def kwarg_dict_to_device(data_obj, device):
@@ -334,6 +337,33 @@ class ImageNetPolicyNet(nn.Module):
         return
 
 
+class Wizard:
+    def __init__(self, n_objects, n_dof=7, n_actions=2):
+        self.n_objects = n_objects
+        self.n_dof = n_dof
+        single_object_template = list(range(0, n_dof ** n_actions))
+        multi_object_template = tuple([single_object_template] * self.n_objects)
+        self.action_memory = list(itertools.product(*multi_object_template))
+        self.registered_actions = []
+
+    def restart(self, n_objects, n_dof=7, n_actions=2):
+        self.n_objects = n_objects
+        self.n_dof = n_dof
+        single_object_template = list(range(0, n_dof ** n_actions))
+        multi_object_template = tuple([single_object_template] * self.n_objects)
+        self.action_memory = list(itertools.product(*multi_object_template))
+
+    def act(self, action_id):
+        actions = self.action_memory[action_id]
+        actions_x = torch.LongTensor([f % self.n_dof for f in actions])
+        actions_y = torch.LongTensor([f // self.n_dof for f in actions])
+        return actions_x, actions_y
+
+    def register(self, example_id, action_id):
+        self.registered_actions.append((example_id, action_id))
+        return
+
+
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
                  batch_tolerance=1, batch_reset=100, name=''):
@@ -365,11 +395,13 @@ class Re1nforceTrainer:
         optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
 
         accuracy_drop = []
+        confusion_drop = []
         batch_idx = 0
         epochs_passed = 0
         epoch_accuracy_drop = 0
+        epoch_confusion_drop = 0
         epoch_accuracy_drop_history = []
-
+        epoch_confusion_drop_history = []
 
         while batch_idx < self.training_duration:
             try:
@@ -378,11 +410,16 @@ class Re1nforceTrainer:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
+
+                best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
+                best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
                 _print(
-                    f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {epoch_accuracy_drop / len(self.dataloader)}%")
+                    f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} %")
                 epochs_passed += 1
                 epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(self.dataloader))
+                epoch_confusion_drop_history.append(epoch_confusion_drop / len(self.dataloader))
                 epoch_accuracy_drop = 0
+                epoch_confusion_drop = 0
 
             # Forward Pass #
 
@@ -421,11 +458,14 @@ class Re1nforceTrainer:
             optimizer.step()
             optimizer.zero_grad()
             batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
+            batch_confusion = 100 * (change_rewards.squeeze(1).mean()).item()
             accuracy_drop.append(batch_accuracy)
+            confusion_drop.append(batch_confusion)
             epoch_accuracy_drop += batch_accuracy
+            epoch_confusion_drop += batch_confusion
             if batch_idx % log_every == 0 and batch_idx > 0:
                 _print(
-                    f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}%")
+                    f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
             if batch_idx % save_every == 0 and batch_idx > 0:
                 self.model.save(f'./results/experiment_reinforce/model_reinforce_{self.name}.pt')
             batch_idx += 1
@@ -461,6 +501,7 @@ class Re1nforceTrainer:
             batch_idx += 1
 
         batch_idx = 0
+        drop = 0
         confusion = 0
         worth_discovering = 0
         while batch_idx < n_eligible_iterations:
@@ -480,14 +521,88 @@ class Re1nforceTrainer:
             mixed_actions = self.quantize(action)
             rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
                 mixed_actions)
-            rewards = np.squeeze(rewards_)
             state_values = state_values.squeeze(1).detach().cpu().numpy()
-            confusion += ((rewards + 0.1) > 0).sum()
+            drop += (confusion_rewards > 0).sum()
+            confusion += (change_rewards > 0).sum()
             worth_discovering += (state_values + 0.1 > 0.05).sum()
+
+            if (confusion_rewards > 0).sum() > 0:
+                q = bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),
+                                  mode='before', q=0, a=0)
+                _ = bird_eye_view(batch_idx, x=scene, y=y_real.to('cpu').numpy(), mode='after', q=q,
+                                  a=predictions_after)
+
             batch_idx += 1
 
-        calc_acc_drop = 100 * confusion / (example_range[1] - example_range[0])
-        calc_acc_drop = round(calc_acc_drop, 3)
+        calc_acc_drop = 100 * drop / (example_range[1] - example_range[0])
+        calc_acc_drop = round(calc_acc_drop.item(), 3)
+        calc_acc_confusion = 100 * confusion / (example_range[1] - example_range[0])
+        calc_acc_confusion = round(calc_acc_confusion.item(), 3)
         worth_disc_n = worth_discovering
         _print(f"Total Accuracy Drop : {calc_acc_drop}")
+        _print(f"Total Accuracy Confusion : {calc_acc_confusion}")
         _print(f"Total Items Worth Discovering  : {worth_disc_n} out of {(example_range[1] - example_range[0])}")
+
+    def discover(self, log_every=100, save_every=10_000, example_range=(0, 1000)):
+        accuracy_drop = []
+        confusion_drop = []
+        batch_idx = 0
+        epochs_passed = 0
+        epoch_accuracy_drop = 0
+        epoch_confusion_drop = 0
+        epoch_accuracy_drop_history = []
+        epoch_confusion_drop_history = []
+        wizard = Wizard(1)
+        while batch_idx < self.training_duration:
+            try:
+                features, org_data, _ = self.game.extract_features(self.dataloader_iter)
+                wizard.restart(org_data['types'][:, :10].sum(1))
+            except StopIteration:
+                del self.dataloader_iter
+                self.dataloader_iter = iter(self.dataloader)
+                features, org_data, _ = self.game.extract_features(self.dataloader_iter)
+                wizard.restart(org_data['types'][:, :10].sum(1))
+                best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
+                best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
+                _print(
+                    f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} %")
+                epochs_passed += 1
+                epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(self.dataloader))
+                epoch_confusion_drop_history.append(epoch_confusion_drop / len(self.dataloader))
+                epoch_accuracy_drop = 0
+                epoch_confusion_drop = 0
+
+            for i in range(len(wizard.action_memory)):
+                actionsx, actionsy = wizard.act(i)
+                action = torch.cat([actionsx, actionsy], dim=0).unsqueeze(1)
+                mixed_actions = self.quantize(action)
+                rewards_, confusion_rewards, change_rewards, _, _, _, _ = self.game.get_rewards(
+                    mixed_actions)
+
+                if rewards_ == 1:
+                    wizard.register(batch_idx, i)
+                    batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
+                    batch_confusion = 100 * (change_rewards.squeeze(1).mean()).item()
+                    accuracy_drop.append(batch_accuracy)
+                    confusion_drop.append(batch_confusion)
+                    epoch_accuracy_drop += batch_accuracy
+                    epoch_confusion_drop += batch_confusion
+                    break
+
+        plt.figure(figsize=(10, 10))
+        plt.title('REINFORCE Accuracy Drop Progress')
+        plt.plot(accuracy_drop, 'b')
+        plt.ylabel("Accuracy Drop on 96% State Transformer")
+        plt.xlabel("Training Iterations")
+        plt.savefig('./results/experiment_reinforce/progress.png')
+        plt.show()
+        plt.close()
+
+        plt.figure(figsize=(10, 10))
+        plt.title('REINFORCE Epoch Accuracy Drop Progress')
+        plt.plot(epoch_accuracy_drop_history, 'b')
+        plt.ylabel("Accuracy Drop on 96% State Transformer")
+        plt.xlabel("Epochs")
+        plt.savefig(f'./results/experiment_reinforce/epoch_progress{self.name}.png')
+        plt.show()
+        plt.close()
