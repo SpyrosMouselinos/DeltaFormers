@@ -330,21 +330,28 @@ class ImageCLEVR_HDF5(Dataset):
     """CLEVR dataset made from Images in HDF5 format."""
 
     def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
-                 scenes_path=None, use_cache=False, return_program=False, effective_range=None):
+                 scenes_path=None, use_cache=False, return_program=False, effective_range=None, output_shape=None):
+        if output_shape is None:
+            print("Assuming Image outputs of size 128x128")
+            self.shape = 128
+        else:
+            print(f"Assuming Image outputs of size {output_shape}x{output_shape}")
+            self.shape = output_shape
         self.return_program = return_program
         self.clvr_path = clvr_path
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
         if split == 'train':
             self.transform = transforms.Compose([transforms.Pad(8),
-                                                 transforms.RandomCrop((128, 128)),
+                                                 transforms.RandomCrop((self.shape, self.shape)),
                                                  transforms.RandomRotation(2.8),  # .05 rad
                                                  transforms.ToTensor(),
                                                  normalize])
         else:
-            self.transform = transforms.Compose([transforms.ToTensor(), normalize])
-        if osp.exists(f'{clvr_path}/{split}_image_dataset.pt'):
-            with open(f'{clvr_path}/{split}_image_dataset.pt', 'rb') as fin:
+            self.transform = transforms.Compose(
+                [transforms.Resize((self.shape, self.shape)), transforms.ToTensor(), normalize])
+        if osp.exists(f'{clvr_path}/{split}_image_dataset_{self.shape}.pt'):
+            with open(f'{clvr_path}/{split}_image_dataset_{self.shape}.pt', 'rb') as fin:
                 info = pickle.load(fin)
             self.split = info['split']
             self.q2index = info['q2index']
@@ -364,7 +371,7 @@ class ImageCLEVR_HDF5(Dataset):
                 except KeyError:
                     _print("Dataset loaded without program!\n")
                     self.return_program = False
-            _print("Dataset loaded succesfully!\n")
+            _print(f"Dataset {self.shape} loaded succesfully!\n")
         else:
             self.split = split
             with open(f'{questions_path}/vocab.json', 'r') as fin:
@@ -384,25 +391,25 @@ class ImageCLEVR_HDF5(Dataset):
                 'y': self.y,
                 'p': self.p
             }
-            with open(f'{clvr_path}/{self.split}_image_dataset.pt', 'wb') as fout:
+            with open(f'{clvr_path}/{self.split}_image_dataset_{self.shape}.pt', 'wb') as fout:
                 pickle.dump(info, fout)
-        if osp.exists(f'{clvr_path}/{split}_images.h5'):
-            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images.h5', 'r')['image']).astype("uint8")
+        if osp.exists(f'{clvr_path}/{split}_images_{self.shape}.h5'):
+            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', 'r')['image']).astype("uint8")
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
         else:
             available_images = natsorted(os.listdir(self.clvr_path + f'/images/{self.split}/'))
-            image_train_shape = (len(available_images), 128, 128, 3)
+            image_train_shape = (len(available_images), self.shape, self.shape, 3)
 
-            f = h5py.File(f'{clvr_path}/{split}_images.h5', mode='w')
+            f = h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', mode='w')
             f.create_dataset("image", image_train_shape, h5py.h5t.STD_U8BE)
 
             for i, img_addr in enumerate(available_images):
-                image = Image.open(self.clvr_path + f'/images/{split}/{img_addr}').convert('RGB').resize((128, 128), 3)
+                image = Image.open(self.clvr_path + f'/images/{split}/{img_addr}').convert('RGB').resize((self.shape, self.shape), 3)
                 f["image"][i] = image
             f.close()
             _print("Image HDF5 written succesfully!\n")
-            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images.h5', 'r')['image']).astype("uint8")
+            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', 'r')['image']).astype("uint8")
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
 
@@ -440,9 +447,11 @@ class MixCLEVR_HDF5(Dataset):
         self.split = split
         self.clvr_path = clvr_path
         self.state_ds = StateCLEVR(config=None, split=split, scenes_path=scenes_path, questions_path=questions_path,
-                                   clvr_path=clvr_path, use_cache=use_cache, return_program=True, effective_range=effective_range)
+                                   clvr_path=clvr_path, use_cache=use_cache, return_program=True,
+                                   effective_range=effective_range)
         self.image_ds = ImageCLEVR_HDF5(config=None, split=split, clvr_path=clvr_path, questions_path=questions_path,
-                                        scenes_path=scenes_path, use_cache=use_cache, return_program=return_program, effective_range=effective_range)
+                                        scenes_path=scenes_path, use_cache=use_cache, return_program=return_program,
+                                        effective_range=effective_range)
 
         if len(self.state_ds) != len(self.image_ds):
             print("Oops")

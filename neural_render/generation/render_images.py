@@ -37,7 +37,8 @@ except ImportError as e:
 if INSIDE_BLENDER:
     try:
         platform_slash = find_platform_slash()
-        sys.path.append(platform_slash.join(os.path.realpath(__file__).split(platform_slash)[:-1]))
+        generation_path = platform_slash.join(os.path.realpath(__file__).split(platform_slash)[:-1])
+        sys.path.append(generation_path)
         import butils
     except ImportError as e:
         print("\nERROR")
@@ -52,19 +53,23 @@ if INSIDE_BLENDER:
 parser = argparse.ArgumentParser()
 
 # Input options
-parser.add_argument('--base_scene_blendfile', default='./generation/data/base_scene.blend',
+parser.add_argument('--base_scene_blendfile',
+                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\base_scene.blend',
                     help="Base blender file on which all scenes are based; includes " +
                          "ground plane, lights, and camera.")
-parser.add_argument('--properties_json', default='./generation/data/properties.json',
+parser.add_argument('--properties_json',
+                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\properties.json',
                     help="JSON file defining objects, materials, sizes, and colors. " +
                          "The \"colors\" field maps from CLEVR color names to RGB values; " +
                          "The \"sizes\" field maps from CLEVR size names to scalars used to " +
                          "rescale object models; the \"materials\" and \"shapes\" fields map " +
                          "from CLEVR material and shape names to .blend files in the " +
                          "--object_material_dir and --shape_dir directories respectively.")
-parser.add_argument('--shape_dir', default='./generation/data/shapes',
+parser.add_argument('--shape_dir',
+                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\shapes',
                     help="Directory where .blend files for object models are stored")
-parser.add_argument('--material_dir', default='./generation/data/materials',
+parser.add_argument('--material_dir',
+                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\materials',
                     help="Directory where .blend files for materials are stored")
 parser.add_argument('--shape_color_combos_json', default=None,
                     help="Optional path to a JSON file mapping shape names to a list of " +
@@ -338,8 +343,8 @@ def render_scene(args,
             break
         except Exception as e:
             print(e)
-    # with open(output_scene, 'w') as f:
-    #     json.dump(scene_struct, f, indent=2)
+    with open(output_scene, 'w') as f:
+        json.dump(scene_struct, f, indent=2)
     return True
 
 
@@ -377,32 +382,6 @@ def add_random_objects(current_item, scene_struct, args, camera, old_behaviour=F
         else:
             raise ValueError("Agent Chose a Size String that does not exist in properties.json file!!!")
 
-        x = args.object_properties[str(current_item)][i]['x']
-        y = args.object_properties[str(current_item)][i]['y']
-
-        dists_good = True
-        margins_good = True
-        for (xx, yy, rr) in positions:
-            dx, dy = x - xx, y - yy
-            dist = math.sqrt(dx * dx + dy * dy)
-            if dist - r - rr < args.min_dist:
-                dists_good = False
-                break
-            for direction_name in ['left', 'right', 'front', 'behind']:
-                direction_vec = scene_struct['directions'][direction_name]
-                assert direction_vec[2] == 0
-                margin = dx * direction_vec[0] + dy * direction_vec[1]
-                if 0 < margin < args.margin:
-                    margins_good = False
-                    break
-
-            if not margins_good:
-                break
-
-        if not dists_good or not margins_good:
-            print("[DEBUG] Failed for Object, ", x, " ", y, "\n")
-            return None, None
-
         if shape_color_combos is None:
             agent_object_choice = args.object_properties[str(current_item)][i]['object']
             if agent_object_choice in dict(object_mapping):
@@ -421,6 +400,32 @@ def add_random_objects(current_item, scene_struct, args, camera, old_behaviour=F
 
         if obj_name == 'Cube':
             r /= math.sqrt(2)
+
+        x = args.object_properties[str(current_item)][i]['x']
+        y = args.object_properties[str(current_item)][i]['y']
+
+        # dists_good = True
+        # margins_good = True
+        # for (xx, yy, rr) in positions:
+        #     dx, dy = x - xx, y - yy
+        #     dist = math.sqrt(dx * dx + dy * dy)
+        #     if dist - r - rr < args.min_dist:
+        #         dists_good = False
+        #         break
+        #     for direction_name in ['left', 'right', 'front', 'behind']:
+        #         direction_vec = scene_struct['directions'][direction_name]
+        #         assert direction_vec[2] == 0
+        #         margin = dx * direction_vec[0] + dy * direction_vec[1]
+        #         if 0 < margin < args.margin:
+        #             margins_good = False
+        #             break
+        #
+        #     if not margins_good:
+        #         break
+        #
+        # if not dists_good or not margins_good:
+        #     print("[DEBUG] Failed for Object, ", x, " ", y, "\n")
+        #     return None, None
 
         # Choose random orientation for the object.
         theta = args.object_properties[str(current_item)][i]['theta']
@@ -455,7 +460,7 @@ def add_random_objects(current_item, scene_struct, args, camera, old_behaviour=F
 
     # Check that all objects are at least partially visible in the rendered image
     all_visible = check_visibility(blender_objects, args.min_pixels_per_object)
-    # all_visible = True
+    #all_visible = True
     if not all_visible:
         # If any of the objects are fully occluded then start over; delete all
         # objects from the scene and place them all again.

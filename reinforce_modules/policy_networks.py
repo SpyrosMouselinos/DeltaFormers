@@ -366,7 +366,7 @@ class Wizard:
 
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
-                 batch_tolerance=1, batch_reset=100, name=''):
+                 batch_tolerance=1, batch_reset=100, name='', predictions_before_pre_calc=None):
         self.name = name
         self.model = model
         self.game = game
@@ -378,6 +378,7 @@ class Re1nforceTrainer:
         self.lr = lr
         self.batch_tolerance = batch_tolerance
         self.batch_reset = batch_reset
+        self.predictions_before_pre_calc = predictions_before_pre_calc
 
     def quantize(self, action, effect_range=(-0.3, 0.3), steps=6):
         action = action.detach().cpu().numpy()
@@ -439,7 +440,7 @@ class Re1nforceTrainer:
 
             mixed_actions = self.quantize(action)
             rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
-                mixed_actions)
+                action_vector=mixed_actions, predictions_before_pre_calc=None)
             rewards = torch.FloatTensor(rewards_).squeeze(1).to(self.device)
             advantages = rewards - state_values.squeeze(1).detach()
 

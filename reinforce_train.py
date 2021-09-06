@@ -1,5 +1,6 @@
 import ast
 import json
+import math
 import os
 import os.path as osp
 import sys
@@ -18,6 +19,7 @@ from oracle.Oracle_CLEVR import Oracle
 import matplotlib.pyplot as plt
 import seaborn as sns
 from reinforce_modules.policy_networks import Re1nforceTrainer, ImageNetPolicyNet, EmptyNetwork, PolicyNet
+from neural_render.blender_render_utils.helpers import render_image
 
 sns.set_style('darkgrid')
 
@@ -153,13 +155,14 @@ def load(path: str, model: nn.Module):
     checkpoint = torch.load(path)
     # removes 'module' from dict entries, pytorch bug #3805
     try:
-        if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
+        if torch.cuda.device_count() >= 1 and any(
+                k.startswith('module.') for k in checkpoint['model_state_dict'].keys()):
             checkpoint['model_state_dict'] = {k.replace('module.', ''): v for k, v in
                                               checkpoint['model_state_dict'].items()}
     except KeyError:
         if torch.cuda.device_count() >= 1 and any(k.startswith('module.') for k in checkpoint.keys()):
             checkpoint = {k.replace('module.', ''): v for k, v in
-                                              checkpoint.items()}
+                          checkpoint.items()}
     try:
         model.load_state_dict(checkpoint['model_state_dict'])
     except KeyError:
@@ -208,14 +211,14 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
     model = model.to(device)
     model.eval()
-    #config_fool = f'./results/experiment_linear_sq/config.yaml'
+    # config_fool = f'./results/experiment_linear_sq/config.yaml'
     config_fool = f'./results/experiment_rn/config.yaml'
     with open(config_fool, 'r') as fin:
         config_fool = yaml.load(fin, Loader=yaml.FullLoader)
 
     model_fool = AVAILABLE_MODELS[config_fool['model_architecture']](config_fool)
     _print(f"Loading Model of type: {config_fool['model_architecture']}\n")
-    #model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
+    # model_fool = load(path=f'./results/experiment_linear_sq/model.pt', model=model_fool)
     model_fool = load(path=f'./results/experiment_rn/mos_epoch_{mos_epoch}.pt', model=model_fool)
     model_fool = model_fool.to(device)
     model_fool.eval()
@@ -323,7 +326,8 @@ class ConfusionGame:
                  change_weight=1.0,
                  fail_weight=-1.0,
                  invalid_weight=0.0,
-                 mode='state'
+                 mode='state',
+                 render=False
                  ):
 
         self.confusion_weight = confusion_weight
@@ -341,6 +345,7 @@ class ConfusionGame:
         self.device = device
         self.oracle = Oracle(metadata_path='./metadata.json')
         self.mode = mode
+        self.render = render
 
     def extract_features(self, iter_on_data):
         """
@@ -390,27 +395,145 @@ class ConfusionGame:
         object_positions += change
         return object_positions.clip(-1.0, 1.0)
 
-    def step(self, action_vector):
+    @staticmethod
+    def render_check(img_xs, img_ys, img_sizes, img_shapes):
+        directions = {'below': [-0.0, -0.0, -1.0],
+                      'front': [0.754490315914154, -0.6563112735748291, -0.0],
+                      'above': [0.0, 0.0, 1.0],
+                      'right': [0.6563112735748291, 0.7544902563095093, -0.0],
+                      'behind': [-0.754490315914154, 0.6563112735748291, 0.0],
+                      'left': [-0.6563112735748291, -0.7544902563095093, 0.0]}
+        positions = []
+        assert len(img_xs) == len(img_ys)
+        for i in range(len(img_xs)):
+            x = img_xs[i]
+            y = img_ys[i]
+            r = img_sizes[i]
+            if r == 0:
+                r = 0.7
+            else:
+                r = 0.3
+            s = img_shapes[i]
+            if s == 0:
+                r /= math.sqrt(2)
+            dists_good = True
+            margins_good = True
+            for (xx, yy, rr) in positions:
+                dx, dy = x - xx, y - yy
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist - r - rr < 0.25:
+                    dists_good = False
+                    break
+                for direction_name in ['left', 'right', 'front', 'behind']:
+                    direction_vec = directions[direction_name]
+                    assert direction_vec[2] == 0
+                    margin = dx * direction_vec[0] + dy * direction_vec[1]
+                    if 0 < margin < 0.4:
+                        margins_good = False
+                        break
+                if not margins_good:
+                    break
+
+            if not dists_good or not margins_good:
+                return False
+            positions.append((x, y, r))
+        return True
+
+    def state2img(self, state):
+        wr = []
+        images_to_be_rendered = n_possible_images = state['positions'].size(0)
+        n_objects_per_image = state['types'][:, :10].sum(1).numpy()
+        key_light_jitter = fill_light_jitter = back_light_jitter = [0.5] * n_possible_images
+        camera_jitter = [1] * n_possible_images
+        xs = []
+        ys = []
+        zs = []
+        colors = []
+        shapes = []
+        materials = []
+        sizes = []
+        questions = []
+        for image_idx in range(n_possible_images):
+            tmp_x = []
+            tmp_y = []
+            tmp_z = []
+            tmp_colors = []
+            tmp_shapes = []
+            tmp_materials = []
+            tmp_sizes = []
+            for object_idx in range(n_objects_per_image[image_idx]):
+                tmp_x.append(state['object_positions'][image_idx, object_idx].numpy()[0] * 3)
+                tmp_y.append(state['object_positions'][image_idx, object_idx].numpy()[1] * 3)
+                tmp_z.append(state['object_positions'][image_idx, object_idx].numpy()[2] * 360)
+                tmp_colors.append(state['object_colors'][image_idx, object_idx].item() - 1)
+                tmp_shapes.append(state['object_shapes'][image_idx, object_idx].item() - 1)
+                tmp_materials.append(state['object_materials'][image_idx, object_idx].item() - 1)
+                tmp_sizes.append(state['object_sizes'][image_idx, object_idx].item() - 1)
+            if self.render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes):
+                xs.append(tmp_x)
+                ys.append(tmp_y)
+                zs.append(tmp_z)
+                colors.append(tmp_colors)
+                shapes.append(tmp_shapes)
+                materials.append(tmp_materials)
+                sizes.append(tmp_sizes)
+                questions.append(state['question'][image_idx])
+                wr.append(image_idx)
+            else:
+                images_to_be_rendered -= 1
+        assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
+                                        back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
+                                        per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
+                                        per_image_colors=colors, per_image_sizes=sizes, per_image_materials=materials,
+                                        num_images=images_to_be_rendered, split='Rendered', start_idx=0, workers=4)
+        final_images = []
+        final_questions = []
+        for pair, real_idx in zip(assembled_images, wr):
+            is_rendered = pair[1]
+            if is_rendered:
+                final_images.append(real_idx)
+                final_questions.append(questions[real_idx])
+        return final_images, final_questions
+
+    def prepare_inputs(self, rendered_images, questions):
+        return 1
+
+    def step(self, action_vector, render=False, predictions_before_precalc=None):
         validity = []
         predictions_after = []
-        predictions_before = self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[
-            0].detach().cpu().argmax(1)
+        if render:
+            ### Pre calculate predictions before in order to save time ###
+            predictions_before = predictions_before_precalc
+        else:
+            predictions_before = self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[
+                0].detach().cpu().argmax(1)
+
         programs = translate_str_program(self.programs)
         object_positions = self.alter_object_positions_on_action(self.org_data, action_vector)
         self.org_data['object_positions'] = object_positions
         scene = translate_state(self.org_data)
         res = self.oracle(programs, scene, None)
         res = translate_answer(res)
-        predictions_after.append(
-            self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[0].detach().cpu().argmax(1))
         validity.append(res)
+
+        if render:
+            rendered_images, questions = self.state2img(self.org_data)
+            predictions_before = [f for i, f in enumerate(predictions_before) if i in rendered_images]
+            validity = [f for i, f in enumerate(validity) if i in rendered_images]
+            scene = [f for i, f in enumerate(scene) if i in rendered_images]
+            data_for_pass = self.prepare_inputs(rendered_images, questions)
+            predictions_after.append(
+                self.confusion_model(**kwarg_dict_to_device(data_for_pass, self.device))[0].detach().cpu().argmax(1))
+        else:
+            predictions_after.append(
+                self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[0].detach().cpu().argmax(1))
 
         return predictions_after, predictions_before, validity, scene
 
-
-
-    def get_rewards(self, action_vector):
-        predictions_after, predictions_before, validity, scene = self.step(action_vector=action_vector)
+    def get_rewards(self, action_vector, predictions_before_pre_calc):
+        predictions_after, predictions_before, validity, scene = self.step(action_vector=action_vector,
+                                                                           render=self.render,
+                                                                           predictions_before_precalc=predictions_before_pre_calc)
         predictions_before = predictions_before.unsqueeze(1)
         predictions_after = torch.stack(predictions_after, dim=1).long()
         if self.batch_size > 1:
@@ -449,12 +572,14 @@ def PolicyEvaluation(args):
                                                scenes_path=args.scenes_path, questions_path=args.questions_path,
                                                clvr_path=args.clvr_path,
                                                use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS,
-                                               mode=args.mode, effective_range=effective_range, mos_epoch=args.mos_epoch)
+                                               mode=args.mode, effective_range=effective_range,
+                                               mos_epoch=args.mos_epoch)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
                             confusion_weight=args.confusion_weight, change_weight=args.change_weight,
-                            fail_weight=args.fail_weight, invalid_weight=args.invalid_weight, mode=args.mode)
+                            fail_weight=args.fail_weight, invalid_weight=args.invalid_weight, mode=args.mode,
+                            render=True)
     if args.mode == 'state' or args.mode == 'visual':
         model = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
     elif args.mode == 'imagenet':
@@ -465,10 +590,12 @@ def PolicyEvaluation(args):
         print("Loading model...")
         model.load(f'./results/experiment_reinforce/model_reinforce_{effective_range_name}.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
-                               train_duration=train_duration, batch_size=BS, name=effective_range_name)
+                               train_duration=train_duration, batch_size=BS, name=effective_range_name,
+                               predictions_before_pre_calc=None)
 
-    trainer.discover(log_every=1000, save_every=1000)
-    #trainer.evaluate(example_range=(0,1000))
+    trainer.train(log_every=1000, save_every=1000)
+    # trainer.evaluate(example_range=(0,1000))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -486,10 +613,10 @@ if __name__ == '__main__':
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=1)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=20)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
-    parser.add_argument('--range', type=float, default=0)
+    parser.add_argument('--range', type=float, default=0.02)
     parser.add_argument('--mos_epoch', type=int, default=146)
 
     args = parser.parse_args()
