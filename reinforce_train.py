@@ -7,11 +7,12 @@ import os.path as osp
 import sys
 
 import numpy as np
+import numpy.random
 import torch.nn
 import yaml
 
 sys.path.insert(0, osp.abspath('.'))
-
+import random
 import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
@@ -28,6 +29,10 @@ from skimage.io import imread
 from skimage.transform import resize as imresize
 
 sns.set_style('darkgrid')
+SEED = 1
+torch.manual_seed(SEED)
+random.seed(SEED)
+numpy.random.seed(SEED)
 
 
 def _print(something):
@@ -409,8 +414,14 @@ class ConfusionGame:
         if confusion_model is None:
             self.confusion_model = self.testbed_model
         else:
-            self.confusion_model = confusion_model
-            self.confusion_model.eval()
+            if isinstance(confusion_model, tuple):
+                a = confusion_model[0].to('cuda')
+                a.eval()
+                b = confusion_model[1].to('cuda')
+                b.eval()
+                self.confusion_model = (a,b)
+            else:
+                self.confusion_model.eval()
         self.device = device
         self.oracle = Oracle(metadata_path='./metadata.json')
         self.mode = mode
@@ -597,12 +608,16 @@ class ConfusionGame:
         questions = torch.cat([f.unsqueeze(0) for f in questions], dim=0)
         ### Pass through Model ###
         if isinstance(self.confusion_model, tuple):
+            questions = questions.to('cuda')
+            feats = feats.to('cuda')
             program_generator, execution_engine = self.confusion_model
             programs_pred = program_generator(questions)
             scores = execution_engine(feats, programs_pred, save_activations=False)
             _, preds = scores.data.cpu().max(1)
         else:
-            scores = self.confusion_model(questions.to('cuda'), feats.to('cuda'))
+            questions = questions.to('cuda')
+            feats = feats.to('cuda')
+            scores = self.confusion_model(questions, feats)
             _, preds = scores.data.cpu().max(1)
         preds = [f - 4 for f in preds]
         send_back = np.ones(self.batch_size) * (-1)
@@ -651,17 +666,21 @@ class ConfusionGame:
                                                                            )
         pb = []
         pa = []
+        not_rendered = []
         for b, a in list(itertools.zip_longest(predictions_before, predictions_after[0])):
             if b is not None:
                 if a == -1:
                     pb.append(int(b))
                     pa.append(int(b))
+                    not_rendered.append(1)
                 else:
                     pb.append(int(b))
                     pa.append(int(a))
+                    not_rendered.append(0)
             else:
                 break
         predictions_before, predictions_after = pb, pa
+        not_rendered = torch.LongTensor(not_rendered)
 
         if isinstance(predictions_before, list):
             predictions_before = torch.LongTensor(predictions_before)
@@ -675,12 +694,12 @@ class ConfusionGame:
         model_answered_correctly = 1.0 * model_answered_correctly.eq(0)
 
         confusion_rewards = (model_answered_correctly * answer_stayed_the_same * (
-                    1.0 * (predictions_before != predictions_after)))
+                1.0 * (predictions_before != predictions_after)))
 
         change_rewards = (answer_stayed_the_same * (1.0 * (predictions_before != predictions_after)))
 
         fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
-        invalid_scene_rewards = self.invalid_weight * (1 - answer_stayed_the_same)
+        invalid_scene_rewards = self.invalid_weight * not_rendered
         self.rewards = self.confusion_weight * confusion_rewards.numpy() + self.change_weight * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
         return self.rewards, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after
 
@@ -707,7 +726,7 @@ def PolicyEvaluation(args):
                                                                                              batch_size=BS,
                                                                                              mode=args.mode,
                                                                                              effective_range=effective_range,
-                                                                                             fool_model='sa')
+                                                                                             fool_model='film')
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -744,13 +763,13 @@ if __name__ == '__main__':
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-1)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=0.01)
+    parser.add_argument('--range', type=float, default=0.1)
     # parser.add_argument('--mos_epoch', type=int, default=146)
 
     args = parser.parse_args()

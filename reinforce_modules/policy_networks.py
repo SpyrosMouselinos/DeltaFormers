@@ -394,7 +394,9 @@ class Re1nforceTrainer:
         t = 10
         self.model = self.model.to(self.device)
         self.model = self.model.train()
-        optimizer = optim.AdamW(self.model.parameters(), lr=self.lr, weight_decay=1e-4)
+        optimizer = optim.AdamW([{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
+                                   {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
+                                   ])
 
         accuracy_drop = []
         confusion_drop = []
@@ -410,14 +412,18 @@ class Re1nforceTrainer:
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
                 if self.predictions_before_pre_calc is not None:
                     self.current_predictions_before = self.predictions_before_pre_calc[
-                        (batch_idx % len(self.dataloader)) * self.batch_size:((batch_idx % len(self.dataloader)) + 1) * self.batch_size]
+                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((
+                                                                                                                        batch_idx % len(
+                                                                                                                    self.dataloader)) + 1) * self.batch_size]
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
                 if self.predictions_before_pre_calc is not None:
                     self.current_predictions_before = self.predictions_before_pre_calc[
-                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((batch_idx % len(self.dataloader)) + 1) * self.batch_size]
+                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((
+                                                                                                                        batch_idx % len(
+                                                                                                                    self.dataloader)) + 1) * self.batch_size]
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
                 best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
                 _print(
@@ -446,7 +452,8 @@ class Re1nforceTrainer:
 
             mixed_actions = self.quantize(action)
             rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
-                action_vector=mixed_actions, current_predictions_before=self.current_predictions_before, resnet=self.resnet)
+                action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
+                resnet=self.resnet)
             rewards = torch.FloatTensor(rewards_).to(self.device)
             advantages = rewards - state_values.squeeze(1).detach()
 
