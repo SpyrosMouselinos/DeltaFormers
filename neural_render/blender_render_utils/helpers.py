@@ -3,6 +3,7 @@ import json
 import os
 import random
 import shlex
+import subprocess
 from subprocess import Popen
 
 import numpy as np
@@ -301,7 +302,7 @@ def command_template(num_images,
       --output_image_dir={output_image_dir} \
       --output_scene_dir={output_scene_dir} \
       --output_scene_file={output_scene_file} \
-      --use_gpu=1 --render_num_samples=128 --width=480 --height=320 --start_idx={start_idx}'
+      --use_gpu=1 --render_num_samples=128 --width=224 --height=224 --start_idx={start_idx}'
     return cmd_template
 
 
@@ -348,16 +349,14 @@ def render_image(key_light_jitter=[1, 2, 3, 4, 5],
                  ):
 
     if clean_before:
-        targets = os.listdir(OUTPUT_IMAGE_DIR_)
-        for target in targets:
+        for target in os.listdir(OUTPUT_IMAGE_DIR_):
             if split in target:
                 try:
                     os.remove(OUTPUT_IMAGE_DIR_ + '/' + target)
                 except:
                     pass
 
-        targets = os.listdir(OUTPUT_SCENE_DIR_)
-        for target in targets:
+        for target in os.listdir(OUTPUT_SCENE_DIR_):
             if split in target:
                 try:
                     os.remove(OUTPUT_SCENE_DIR_ + '/' + target)
@@ -367,9 +366,9 @@ def render_image(key_light_jitter=[1, 2, 3, 4, 5],
     cmds = [command_template(**effective_args[f]) for f in effective_args.keys()]
 
     args = [shlex.split(cmd) for cmd in cmds]
-    procs = [Popen(arg) for arg in args]
+    procs = [Popen(arg, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for arg in args]
     for i, proc in enumerate(procs):
-        proc.communicate()
+        _ = proc.communicate()
         proc.wait()
 
     ### Assemble Images

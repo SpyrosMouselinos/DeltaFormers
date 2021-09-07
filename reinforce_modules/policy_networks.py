@@ -366,7 +366,7 @@ class Wizard:
 
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
-                 batch_tolerance=1, batch_reset=100, name='', predictions_before_pre_calc=None):
+                 batch_tolerance=1, batch_reset=100, name='', predictions_before_pre_calc=None, resnet=None):
         self.name = name
         self.model = model
         self.game = game
@@ -379,6 +379,7 @@ class Re1nforceTrainer:
         self.batch_tolerance = batch_tolerance
         self.batch_reset = batch_reset
         self.predictions_before_pre_calc = predictions_before_pre_calc
+        self.resnet = resnet
 
     def quantize(self, action, effect_range=(-0.3, 0.3), steps=6):
         action = action.detach().cpu().numpy()
@@ -407,11 +408,16 @@ class Re1nforceTrainer:
         while batch_idx < self.training_duration:
             try:
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
+                if self.predictions_before_pre_calc is not None:
+                    self.current_predictions_before = self.predictions_before_pre_calc[
+                        (batch_idx % len(self.dataloader)) * self.batch_size:((batch_idx % len(self.dataloader)) + 1) * self.batch_size]
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
-
+                if self.predictions_before_pre_calc is not None:
+                    self.current_predictions_before = self.predictions_before_pre_calc[
+                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((batch_idx % len(self.dataloader)) + 1) * self.batch_size]
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
                 best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
                 _print(
@@ -440,8 +446,8 @@ class Re1nforceTrainer:
 
             mixed_actions = self.quantize(action)
             rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
-                action_vector=mixed_actions, predictions_before_pre_calc=None)
-            rewards = torch.FloatTensor(rewards_).squeeze(1).to(self.device)
+                action_vector=mixed_actions, current_predictions_before=self.current_predictions_before, resnet=self.resnet)
+            rewards = torch.FloatTensor(rewards_).to(self.device)
             advantages = rewards - state_values.squeeze(1).detach()
 
             ploss = -log_probs * advantages
@@ -458,8 +464,8 @@ class Re1nforceTrainer:
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
             optimizer.step()
             optimizer.zero_grad()
-            batch_accuracy = 100 * (confusion_rewards.squeeze(1).mean()).item()
-            batch_confusion = 100 * (change_rewards.squeeze(1).mean()).item()
+            batch_accuracy = 100 * (confusion_rewards.mean()).item()
+            batch_confusion = 100 * (change_rewards.mean()).item()
             accuracy_drop.append(batch_accuracy)
             confusion_drop.append(batch_confusion)
             epoch_accuracy_drop += batch_accuracy

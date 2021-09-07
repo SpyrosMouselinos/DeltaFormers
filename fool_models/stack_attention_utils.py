@@ -79,10 +79,12 @@ def inference_with_cnn_sa(loader=None, model=None, resnet_extractor=None):
     model.type(dtype)
     model.eval()
     num_correct, num_samples = 0, 0
+    final_preds = []
     print(f"Testing for {len(loader)} samples")
     print()
     for batch in loader:
-        iq, answers = batch
+        (_, iq), answer, _ = batch
+        #iq, answers = batch
         image = iq['image'].to('cuda')
         questions = iq['question'].to('cuda')
         feats = resnet_extractor(image)
@@ -92,18 +94,19 @@ def inference_with_cnn_sa(loader=None, model=None, resnet_extractor=None):
         scores = model(questions_var, feats_var)
 
         _, preds = scores.data.cpu().max(1)
-
-        num_correct += (preds == (answers.squeeze() + 4)).sum()
+        for item in preds.detach().cpu().numpy():
+            final_preds.append(item - 4)
+        num_correct += (preds == (answer.squeeze() + 4)).sum()
         num_samples += preds.size(0)
         if num_samples % 1000 == 0:
             print(f'Ran {num_samples} samples at {float(num_correct) / num_samples} accuracy')
 
     acc = float(num_correct) / num_samples
     print('Got %d / %d = %.2f correct' % (num_correct, num_samples, 100 * acc))
-    return
+    return final_preds
 
 
-resnet = load_resnet_backbone()
-model = load_cnn_sa()
-loader = load_loader()
-inference_with_cnn_sa(loader=loader, model=model, resnet_extractor=resnet)
+# resnet = load_resnet_backbone()
+# model = load_cnn_sa()
+# loader = load_loader()
+# inference_with_cnn_sa(loader=loader, model=model, resnet_extractor=resnet)

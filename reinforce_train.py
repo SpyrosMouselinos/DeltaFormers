@@ -1,4 +1,5 @@
 import ast
+import itertools
 import json
 import math
 import os
@@ -20,6 +21,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from reinforce_modules.policy_networks import Re1nforceTrainer, ImageNetPolicyNet, EmptyNetwork, PolicyNet
 from neural_render.blender_render_utils.helpers import render_image
+from fool_models.film_utils import load_film, load_resnet_backbone, inference_with_film
+from fool_models.stack_attention_utils import load_cnn_sa, inference_with_cnn_sa
+from skimage.color import rgba2rgb
+from skimage.io import imread
+from skimage.transform import resize as imresize
 
 sns.set_style('darkgrid')
 
@@ -241,6 +247,69 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
     return model, model_fool, val_dataloader
 
 
+def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
+                          use_cache=False, batch_size=128,
+                          use_hdf5=False, mode='state', effective_range=None, fool_model=None):
+    if fool_model is None:
+        _print("No model is chosen...aborting")
+        return
+    elif fool_model == 'sa':
+        resnet = load_resnet_backbone()
+        model_fool = load_cnn_sa()
+    elif fool_model == 'film':
+        resnet = load_resnet_backbone()
+        model_fool = load_film()
+    else:
+        raise NotImplementedError
+
+    if device == 'cuda':
+        device = 'cuda:0'
+
+    experiment_name = load_from.split('results/')[-1].split('/')[0]
+    config = f'./results/{experiment_name}/config.yaml'
+    with open(config, 'r') as fin:
+        config = yaml.load(fin, Loader=yaml.FullLoader)
+
+    if mode == 'state':
+        model = AVAILABLE_MODELS[config['model_architecture']](config)
+        _print(f"Loading Model of type: {config['model_architecture']}\n")
+        model = load(path=load_from, model=model)
+    elif mode == 'imagenet':
+        model = EmptyNetwork()
+    elif mode == 'visual':
+        model = AVAILABLE_MODELS[config['model_architecture']](config)
+        _print(f"Loading Model of type: {config['model_architecture']}\n")
+        model = load(path=load_from, model=model)
+    else:
+        raise NotImplementedError
+
+    model = model.to(device)
+    model.eval()
+
+    _print(f"Loading Model of type: {fool_model}\n")
+
+    val_set = MixCLEVR_HDF5(config=config, split='val',
+                            clvr_path=clvr_path,
+                            questions_path=questions_path,
+                            scenes_path=scenes_path,
+                            use_cache=use_cache,
+                            return_program=True,
+                            effective_range=effective_range, output_shape=224)
+
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                                 num_workers=0, shuffle=False, drop_last=False)
+    _print(f"Loader has : {len(val_dataloader)} batches\n")
+    _print(f"Calculating and storing answers of {fool_model} model!\n")
+    if fool_model == 'sa':
+        predictions_before_pre_calc = inference_with_cnn_sa(val_dataloader, model_fool, resnet)
+    elif fool_model == 'film':
+        predictions_before_pre_calc = inference_with_film(val_dataloader, model_fool, resnet)
+    else:
+        raise NotImplementedError
+
+    return model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc
+
+
 def get_test_loader(load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/'):
     experiment_name = load_from.split('results/')[-1].split('/')[0]
     config = f'./results/{experiment_name}/config.yaml'
@@ -366,7 +435,7 @@ class ConfusionGame:
                 if self.mode == 'imagenet':
                     y_feats = image_data['image']
                 else:
-                    _, _, y_feats = self.testbed_model(**image_data)
+                    _, _, y_feats = self.testbed_model(**data)
             else:
                 data = kwarg_dict_to_device(data, self.device)
                 _, _, y_feats = self.testbed_model(**data)
@@ -481,6 +550,13 @@ class ConfusionGame:
                 wr.append(image_idx)
             else:
                 images_to_be_rendered -= 1
+
+        for target in os.listdir('./neural_render/images'):
+            if 'Rendered' in target:
+                try:
+                    os.remove('./neural_render/images/' + target)
+                except:
+                    pass
         assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
                                         back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
                                         per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
@@ -488,22 +564,61 @@ class ConfusionGame:
                                         num_images=images_to_be_rendered, split='Rendered', start_idx=0, workers=4)
         final_images = []
         final_questions = []
-        for pair, real_idx in zip(assembled_images, wr):
+        for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
             is_rendered = pair[1]
             if is_rendered:
                 final_images.append(real_idx)
-                final_questions.append(questions[real_idx])
+                final_questions.append(questions[fake_idx])
         return final_images, final_questions
 
-    def prepare_inputs(self, rendered_images, questions):
-        return 1
+    def perpare_and_pass(self, resnet, questions, rendered_images):
+        img_size = (224, 224)
+        path = './neural_render/images'
+        images = [f'./neural_render/images/{f}' for f in os.listdir(path) if 'Rendered' in f and '.png' in f]
+        feat_list = []
+        if len(images) == 0:
+            return [-1] * self.batch_size
+        ### Read the images ###
+        for image in images:
+            img = imread(image)
+            img = rgba2rgb(img)
+            img = imresize(img, img_size)
+            img = img.astype('float32')
+            img = img.transpose(2, 0, 1)[None]
+            mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
+            std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
+            img = (img - mean) / std
+            img_var = torch.FloatTensor(img).to('cuda')
+            ### Pass through Resnet ###
+            feat_list.append(resnet(img_var))
 
-    def step(self, action_vector, render=False, predictions_before_precalc=None):
+        ### Stack them with Questions ###
+        feats = torch.cat(feat_list, dim=0)
+        questions = torch.cat([f.unsqueeze(0) for f in questions], dim=0)
+        ### Pass through Model ###
+        if isinstance(self.confusion_model, tuple):
+            program_generator, execution_engine = self.confusion_model
+            programs_pred = program_generator(questions)
+            scores = execution_engine(feats, programs_pred, save_activations=False)
+            _, preds = scores.data.cpu().max(1)
+        else:
+            scores = self.confusion_model(questions.to('cuda'), feats.to('cuda'))
+            _, preds = scores.data.cpu().max(1)
+        preds = [f - 4 for f in preds]
+        send_back = np.ones(self.batch_size) * (-1)
+        k = 0
+        for i in range(self.batch_size):
+            if i in rendered_images:
+                send_back[i] = preds[k]
+                k += 1
+        return send_back
+
+    def step(self, action_vector, render=False, current_predictions_before=None, resnet=None):
         validity = []
         predictions_after = []
         if render:
             ### Pre calculate predictions before in order to save time ###
-            predictions_before = predictions_before_precalc
+            predictions_before = current_predictions_before
         else:
             predictions_before = self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[
                 0].detach().cpu().argmax(1)
@@ -518,36 +633,51 @@ class ConfusionGame:
 
         if render:
             rendered_images, questions = self.state2img(self.org_data)
-            predictions_before = [f for i, f in enumerate(predictions_before) if i in rendered_images]
-            validity = [f for i, f in enumerate(validity) if i in rendered_images]
-            scene = [f for i, f in enumerate(scene) if i in rendered_images]
-            data_for_pass = self.prepare_inputs(rendered_images, questions)
-            predictions_after.append(
-                self.confusion_model(**kwarg_dict_to_device(data_for_pass, self.device))[0].detach().cpu().argmax(1))
+            predictions_before = [f for f in predictions_before]
+            validity = [f for f in validity[0]]
+            scene = [f for f in scene]
+            predictions_after.append(self.perpare_and_pass(resnet, questions, rendered_images))
         else:
             predictions_after.append(
                 self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[0].detach().cpu().argmax(1))
 
         return predictions_after, predictions_before, validity, scene
 
-    def get_rewards(self, action_vector, predictions_before_pre_calc):
+    def get_rewards(self, action_vector, current_predictions_before=None, resnet=None):
         predictions_after, predictions_before, validity, scene = self.step(action_vector=action_vector,
                                                                            render=self.render,
-                                                                           predictions_before_precalc=predictions_before_pre_calc)
-        predictions_before = predictions_before.unsqueeze(1)
-        predictions_after = torch.stack(predictions_after, dim=1).long()
-        if self.batch_size > 1:
-            validity = [torch.LongTensor(f) for f in validity]
-        answer_stayed_the_same = self.org_answers - torch.stack(validity, dim=1).long()
-        answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0)
-        model_answered_correctly = self.org_answers - predictions_before
+                                                                           current_predictions_before=current_predictions_before,
+                                                                           resnet=resnet
+                                                                           )
+        pb = []
+        pa = []
+        for b, a in list(itertools.zip_longest(predictions_before, predictions_after[0])):
+            if b is not None:
+                if a == -1:
+                    pb.append(int(b))
+                    pa.append(int(b))
+                else:
+                    pb.append(int(b))
+                    pa.append(int(a))
+            else:
+                break
+        predictions_before, predictions_after = pb, pa
+
+        if isinstance(predictions_before, list):
+            predictions_before = torch.LongTensor(predictions_before)
+
+        if isinstance(predictions_after, list):
+            predictions_after = torch.LongTensor(predictions_after)
+
+        answer_stayed_the_same = self.org_answers - torch.stack(validity, dim=0).long()
+        answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0).squeeze(1)
+        model_answered_correctly = self.org_answers.squeeze(1) - predictions_before
         model_answered_correctly = 1.0 * model_answered_correctly.eq(0)
 
         confusion_rewards = (model_answered_correctly * answer_stayed_the_same * (
-                1.0 - 1.0 * (predictions_before - predictions_after).eq(0)))
+                    1.0 * (predictions_before != predictions_after)))
 
-        change_rewards = (answer_stayed_the_same * (
-                1.0 - 1.0 * (predictions_before - predictions_after).eq(0)))
+        change_rewards = (answer_stayed_the_same * (1.0 * (predictions_before != predictions_after)))
 
         fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
         invalid_scene_rewards = self.invalid_weight * (1 - answer_stayed_the_same)
@@ -556,7 +686,6 @@ class ConfusionGame:
 
 
 def PolicyEvaluation(args):
-    print(args.mos_epoch)
     if args.range == -1:
         effective_range = None
         effective_range_name = 'all'
@@ -568,12 +697,17 @@ def PolicyEvaluation(args):
     else:
         os.mkdir(f'./results/experiment_reinforce')
     BS = args.bs
-    model, model_fool, loader = get_fool_model(device=args.device, load_from=args.load_from,
-                                               scenes_path=args.scenes_path, questions_path=args.questions_path,
-                                               clvr_path=args.clvr_path,
-                                               use_cache=args.use_cache, use_hdf5=args.use_hdf5, batch_size=BS,
-                                               mode=args.mode, effective_range=effective_range,
-                                               mos_epoch=args.mos_epoch)
+    model, (model_fool, resnet), loader, predictions_before_pre_calc = get_visual_fool_model(device=args.device,
+                                                                                             load_from=args.load_from,
+                                                                                             scenes_path=args.scenes_path,
+                                                                                             questions_path=args.questions_path,
+                                                                                             clvr_path=args.clvr_path,
+                                                                                             use_cache=args.use_cache,
+                                                                                             use_hdf5=args.use_hdf5,
+                                                                                             batch_size=BS,
+                                                                                             mode=args.mode,
+                                                                                             effective_range=effective_range,
+                                                                                             fool_model='sa')
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -591,9 +725,9 @@ def PolicyEvaluation(args):
         model.load(f'./results/experiment_reinforce/model_reinforce_{effective_range_name}.pt')
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
-                               predictions_before_pre_calc=None)
+                               predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet)
 
-    trainer.train(log_every=1000, save_every=1000)
+    trainer.train(log_every=100, save_every=1000)
     # trainer.evaluate(example_range=(0,1000))
 
 
@@ -613,11 +747,11 @@ if __name__ == '__main__':
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=20)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
-    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
-    parser.add_argument('--range', type=float, default=0.02)
-    parser.add_argument('--mos_epoch', type=int, default=146)
+    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
+    parser.add_argument('--range', type=float, default=0.01)
+    # parser.add_argument('--mos_epoch', type=int, default=146)
 
     args = parser.parse_args()
     PolicyEvaluation(args)

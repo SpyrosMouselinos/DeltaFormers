@@ -360,14 +360,14 @@ class ImageCLEVR_HDF5(Dataset):
                 self.x = info['x']
                 self.y = info['y']
             else:
-                self.x = info['x'][0:effective_range]
-                self.y = info['y'][0:effective_range]
+                self.x = info['x'][0:int(effective_range)]
+                self.y = info['y'][0:int(effective_range)]
             if self.return_program:
                 try:
                     if effective_range is None:
                         self.p = info['p']
                     else:
-                        self.p = info['p'][0:effective_range]
+                        self.p = info['p'][0:int(effective_range)]
                 except KeyError:
                     _print("Dataset loaded without program!\n")
                     self.return_program = False
@@ -442,7 +442,7 @@ class ImageCLEVR_HDF5(Dataset):
 
 class MixCLEVR_HDF5(Dataset):
     def __init__(self, config=None, split='val', scenes_path='data/', clvr_path='data/', questions_path='data/',
-                 use_cache=False, return_program=False, effective_range=None):
+                 use_cache=False, return_program=False, effective_range=None, output_shape=None):
         self.return_program = return_program
         self.split = split
         self.clvr_path = clvr_path
@@ -451,7 +451,7 @@ class MixCLEVR_HDF5(Dataset):
                                    effective_range=effective_range)
         self.image_ds = ImageCLEVR_HDF5(config=None, split=split, clvr_path=clvr_path, questions_path=questions_path,
                                         scenes_path=scenes_path, use_cache=use_cache, return_program=return_program,
-                                        effective_range=effective_range)
+                                        effective_range=effective_range, output_shape=output_shape)
 
         if len(self.state_ds) != len(self.image_ds):
             print("Oops")
