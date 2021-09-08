@@ -27,6 +27,8 @@ def find_platform_slash() -> str:
     elif platform == 'LINUX':
         return '/'
 
+PLATFORM_SLASH = find_platform_slash()
+UP_TO_HERE_ = PLATFORM_SLASH.join(os.path.abspath(__file__).split(PLATFORM_SLASH)[:-2]).replace(PLATFORM_SLASH, '/')
 
 INSIDE_BLENDER = True
 try:
@@ -54,11 +56,11 @@ parser = argparse.ArgumentParser()
 
 # Input options
 parser.add_argument('--base_scene_blendfile',
-                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\base_scene.blend',
+                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}base_scene.blend',
                     help="Base blender file on which all scenes are based; includes " +
                          "ground plane, lights, and camera.")
 parser.add_argument('--properties_json',
-                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\properties.json',
+                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}properties.json',
                     help="JSON file defining objects, materials, sizes, and colors. " +
                          "The \"colors\" field maps from CLEVR color names to RGB values; " +
                          "The \"sizes\" field maps from CLEVR size names to scalars used to " +
@@ -66,10 +68,10 @@ parser.add_argument('--properties_json',
                          "from CLEVR material and shape names to .blend files in the " +
                          "--object_material_dir and --shape_dir directories respectively.")
 parser.add_argument('--shape_dir',
-                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\shapes',
+                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}shapes',
                     help="Directory where .blend files for object models are stored")
 parser.add_argument('--material_dir',
-                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\data\\materials',
+                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}materials',
                     help="Directory where .blend files for materials are stored")
 parser.add_argument('--shape_color_combos_json', default=None,
                     help="Optional path to a JSON file mapping shape names to a list of " +

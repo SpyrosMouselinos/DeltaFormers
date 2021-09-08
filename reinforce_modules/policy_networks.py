@@ -391,11 +391,15 @@ class Re1nforceTrainer:
         return quantized_actions
 
     def train(self, log_every=100, save_every=10_000, example_range=(0, 1000)):
+        if self.resnet is None:
+            prefix = 'state'
+        else:
+            prefix = 'visual'
         t = 10
         self.model = self.model.to(self.device)
         self.model = self.model.train()
         optimizer = optim.AdamW([{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
-                                   {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
+                                   {'params': self.model.value_model.parameters(), 'lr': self.lr, 'weight_decay': 1e-4},
                                    ])
 
         accuracy_drop = []
@@ -415,6 +419,8 @@ class Re1nforceTrainer:
                                                       (batch_idx % len(self.dataloader)) * self.batch_size:((
                                                                                                                         batch_idx % len(
                                                                                                                     self.dataloader)) + 1) * self.batch_size]
+                else:
+                    self.current_predictions_before = None
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
@@ -424,6 +430,8 @@ class Re1nforceTrainer:
                                                       (batch_idx % len(self.dataloader)) * self.batch_size:((
                                                                                                                         batch_idx % len(
                                                                                                                     self.dataloader)) + 1) * self.batch_size]
+                else:
+                    self.current_predictions_before = None
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
                 best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
                 _print(
@@ -481,9 +489,9 @@ class Re1nforceTrainer:
                 _print(
                     f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
             if batch_idx % save_every == 0 and batch_idx > 0:
-                self.model.save(f'./results/experiment_reinforce/model_reinforce_{self.name}.pt')
+                self.model.save(f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}.pt')
             batch_idx += 1
-        self.model.save(f'./results/experiment_reinforce/model_reinforce_{self.name}.pt')
+        self.model.save(f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}.pt')
         plt.figure(figsize=(10, 10))
         plt.title('REINFORCE Accuracy Drop Progress')
         plt.plot(accuracy_drop, 'b')

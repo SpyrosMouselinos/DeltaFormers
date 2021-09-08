@@ -419,8 +419,9 @@ class ConfusionGame:
                 a.eval()
                 b = confusion_model[1].to('cuda')
                 b.eval()
-                self.confusion_model = (a,b)
+                self.confusion_model = (a, b)
             else:
+                self.confusion_model = confusion_model
                 self.confusion_model.eval()
         self.device = device
         self.oracle = Oracle(metadata_path='./metadata.json')
@@ -644,12 +645,11 @@ class ConfusionGame:
         scene = translate_state(self.org_data)
         res = self.oracle(programs, scene, None)
         res = translate_answer(res)
-        validity.append(res)
+        validity = res
 
         if render:
             rendered_images, questions = self.state2img(self.org_data)
             predictions_before = [f for f in predictions_before]
-            validity = [f for f in validity[0]]
             scene = [f for f in scene]
             predictions_after.append(self.perpare_and_pass(resnet, questions, rendered_images))
         else:
@@ -705,34 +705,55 @@ class ConfusionGame:
 
 
 def PolicyEvaluation(args):
+    if args.mode == 'state':
+        prefix = 'state'
+    else:
+        prefix = 'visual'
+
     if args.range == -1:
         effective_range = None
         effective_range_name = 'all'
     else:
         effective_range = args.range * 1000
         effective_range_name = f'{args.range}k'
-    if osp.exists(f'./results/experiment_reinforce'):
+    if osp.exists(f'./results/experiment_reinforce/{prefix}'):
         pass
     else:
-        os.mkdir(f'./results/experiment_reinforce')
+        os.mkdir(f'./results/experiment_reinforce/{prefix}')
     BS = args.bs
-    model, (model_fool, resnet), loader, predictions_before_pre_calc = get_visual_fool_model(device=args.device,
-                                                                                             load_from=args.load_from,
-                                                                                             scenes_path=args.scenes_path,
-                                                                                             questions_path=args.questions_path,
-                                                                                             clvr_path=args.clvr_path,
-                                                                                             use_cache=args.use_cache,
-                                                                                             use_hdf5=args.use_hdf5,
-                                                                                             batch_size=BS,
-                                                                                             mode=args.mode,
-                                                                                             effective_range=effective_range,
-                                                                                             fool_model='film')
+
+    if prefix == 'state':
+        model, model_fool, val_dataloader = get_fool_model(device=args.device, load_from=args.load_from,
+                                                           scenes_path=args.scenes_path,
+                                                           questions_path=args.questions_path,
+                                                           clvr_path=args.clvr_path,
+                                                           use_cache=args.use_cache,
+                                                           use_hdf5=args.use_hdf5,
+                                                           batch_size=BS,
+                                                           mode=args.mode,
+                                                           effective_range=effective_range,
+                                                           mos_epoch=args.mos_epoch)
+        predictions_before_pre_calc = None
+        resnet = None
+
+    else:
+        model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc = get_visual_fool_model(device=args.device,
+                                                                                                 load_from=args.load_from,
+                                                                                                 scenes_path=args.scenes_path,
+                                                                                                 questions_path=args.questions_path,
+                                                                                                 clvr_path=args.clvr_path,
+                                                                                                 use_cache=args.use_cache,
+                                                                                                 use_hdf5=args.use_hdf5,
+                                                                                                 batch_size=BS,
+                                                                                                 mode=args.mode,
+                                                                                                 effective_range=effective_range,
+                                                                                                 fool_model=args.fool_model)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
                             confusion_weight=args.confusion_weight, change_weight=args.change_weight,
                             fail_weight=args.fail_weight, invalid_weight=args.invalid_weight, mode=args.mode,
-                            render=True)
+                            render=args.mode == 'visual')
     if args.mode == 'state' or args.mode == 'visual':
         model = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
     elif args.mode == 'imagenet':
@@ -742,7 +763,7 @@ def PolicyEvaluation(args):
     if args.cont > 0:
         print("Loading model...")
         model.load(f'./results/experiment_reinforce/model_reinforce_{effective_range_name}.pt')
-    trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=loader, device=args.device, lr=args.lr,
+    trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=val_dataloader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
                                predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet)
 
@@ -763,14 +784,15 @@ if __name__ == '__main__':
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-1)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
     parser.add_argument('--range', type=float, default=0.1)
-    # parser.add_argument('--mos_epoch', type=int, default=146)
+    parser.add_argument('--mos_epoch', type=int, default=146)
+    parser.add_argument('--fool_model', type=str, default='sa')
 
     args = parser.parse_args()
     PolicyEvaluation(args)

@@ -155,7 +155,7 @@ def inference_with_iep(loader=None, model=None, resnet_extractor=None):
     return
 
 
-resnet = load_resnet_backbone()
-model = load_iep()
-loader = load_loader()
-inference_with_iep(loader=loader, model=model, resnet_extractor=resnet)
+# resnet = load_resnet_backbone()
+# model = load_iep()
+# loader = load_loader()
+# inference_with_iep(loader=loader, model=model, resnet_extractor=resnet)
