@@ -9,7 +9,9 @@ from torch.autograd import Variable
 from fool_models.stack_attention import CnnLstmSaModel
 from neural_render.blender_render_utils.constants import find_platform_slash
 from utils.train_utils import ImageCLEVR_HDF5
-
+from skimage.color import rgba2rgb
+from skimage.io import imread
+from skimage.transform import resize as imresize
 PLATFORM_SLASH = find_platform_slash()
 UP_TO_HERE_ = PLATFORM_SLASH.join(os.path.abspath(__file__).split(PLATFORM_SLASH)[:-2]).replace(PLATFORM_SLASH, '/')
 
@@ -84,7 +86,7 @@ def inference_with_cnn_sa(loader=None, model=None, resnet_extractor=None):
     print()
     for batch in loader:
         (_, iq), answer, _ = batch
-        #iq, answers = batch
+        # iq, answers = batch
         image = iq['image'].to('cuda')
         questions = iq['question'].to('cuda')
         feats = resnet_extractor(image)
@@ -106,7 +108,45 @@ def inference_with_cnn_sa(loader=None, model=None, resnet_extractor=None):
     return final_preds
 
 
-# resnet = load_resnet_backbone()
-# model = load_cnn_sa()
+def single_inference_with_cnn_sa(model=None, resnet=None):
+    dtype = torch.cuda.FloatTensor
+    model.type(dtype)
+    model.eval()
+    img_size = (224, 224)
+    path = '../neural_render/images'
+    images = [f'../neural_render/images/{f}' for f in os.listdir(path) if 'Rendered' in f and '.png' in f]
+    feat_list = []
+    ### Read the images ###
+    for image in images:
+        img = imread(image)
+        img = rgba2rgb(img)
+        img = imresize(img, img_size)
+        img = img.astype('float32')
+        img = img.transpose(2, 0, 1)[None]
+        mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
+        std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
+        img = (img - mean) / std
+        img_var = torch.FloatTensor(img).to('cuda')
+        ### Pass through Resnet ###
+        feat_list.append(resnet(img_var))
+
+    ### Stack them with Questions ###
+    feats = torch.cat(feat_list, dim=0)
+    questions = [10, 85, 14, 25, 30, 64, 66, 84, 74, 75, 21, 84, 45, 86, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    questions = torch.LongTensor(questions).unsqueeze(0)
+
+    questions = questions.to('cuda')
+    feats = feats.to('cuda')
+    scores = model(questions, feats)
+    _, preds = scores.data.cpu().max(1)
+    preds = [f - 4 for f in preds]
+    print(preds)
+    return
+
+
+#resnet = load_resnet_backbone()
+#model = load_cnn_sa()
 # loader = load_loader()
 # inference_with_cnn_sa(loader=loader, model=model, resnet_extractor=resnet)
+#single_inference_with_cnn_sa(model=model, resnet=resnet)

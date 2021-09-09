@@ -117,6 +117,7 @@ def load_resnet_backbone():
 
 
 def inference_with_iep(loader=None, model=None, resnet_extractor=None):
+    final_preds = []
     dtype = torch.cuda.FloatTensor
     program_generator, execution_engine = model
     program_generator.type(dtype)
@@ -128,7 +129,7 @@ def inference_with_iep(loader=None, model=None, resnet_extractor=None):
     print(f"Testing for {len(loader)} samples")
     print()
     for batch in loader:
-        iq, answers = batch
+        (_, iq), answer, _ = batch
         image = iq['image'].to('cuda')
         questions = iq['question'].to('cuda')
         feats = resnet_extractor(image)
@@ -144,15 +145,16 @@ def inference_with_iep(loader=None, model=None, resnet_extractor=None):
         scores = execution_engine(feats_var, programs_pred)
 
         _, preds = scores.data.cpu().max(1)
-
-        num_correct += (preds == (answers.squeeze() + 4)).sum()
+        for item in preds.detach().cpu().numpy():
+            final_preds.append(item - 4)
+        num_correct += (preds == (answer.squeeze() + 4)).sum()
         num_samples += preds.size(0)
         if num_samples % 1000 == 0:
             print(f'Ran {num_samples} samples at {float(num_correct) / num_samples} accuracy')
 
     acc = float(num_correct) / num_samples
-    print('Got %d / %d = %.2f correct' % (num_correct, num_samples, 100 * acc))
-    return
+    print('[IEP] Got %d / %d = %.2f correct' % (num_correct, num_samples, 100 * acc))
+    return final_preds
 
 
 # resnet = load_resnet_backbone()

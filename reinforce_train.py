@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from reinforce_modules.policy_networks import Re1nforceTrainer, ImageNetPolicyNet, EmptyNetwork, PolicyNet
 from neural_render.blender_render_utils.helpers import render_image
+from fool_models.iep_utils import load_iep, inference_with_iep
 from fool_models.film_utils import load_film, load_resnet_backbone, inference_with_film
 from fool_models.stack_attention_utils import load_cnn_sa, inference_with_cnn_sa
 from skimage.color import rgba2rgb
@@ -264,6 +265,9 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
     elif fool_model == 'film':
         resnet = load_resnet_backbone()
         model_fool = load_film()
+    elif fool_model == 'iep':
+        resnet = load_resnet_backbone()
+        model_fool = load_iep()
     else:
         raise NotImplementedError
 
@@ -309,6 +313,8 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
         predictions_before_pre_calc = inference_with_cnn_sa(val_dataloader, model_fool, resnet)
     elif fool_model == 'film':
         predictions_before_pre_calc = inference_with_film(val_dataloader, model_fool, resnet)
+    elif fool_model == 'iep':
+        predictions_before_pre_calc = inference_with_iep(val_dataloader, model_fool, resnet)
     else:
         raise NotImplementedError
 
@@ -566,7 +572,7 @@ class ConfusionGame:
                     questions.append(state['question'][image_idx])
                     wr.append(image_idx)
                 else:
-                    #print(f"Check Failed for index {custom_index}!")
+                    # print(f"Check Failed for index {custom_index}!")
                     images_to_be_rendered -= 1
 
             if delete_every:
@@ -582,7 +588,7 @@ class ConfusionGame:
                                             per_image_colors=colors, per_image_sizes=sizes,
                                             per_image_materials=materials,
                                             num_images=images_to_be_rendered, split='Rendered', start_idx=custom_index,
-                                            workers=4)
+                                            workers=1)
             final_images = []
             final_questions = []
             for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
@@ -597,7 +603,6 @@ class ConfusionGame:
                 else:
                     continue
         return final_images, final_questions
-
 
     def perpare_and_pass(self, resnet, questions, rendered_images):
         img_size = (224, 224)
@@ -628,8 +633,15 @@ class ConfusionGame:
             questions = questions.to('cuda')
             feats = feats.to('cuda')
             program_generator, execution_engine = self.confusion_model
-            programs_pred = program_generator(questions)
-            scores = execution_engine(feats, programs_pred, save_activations=False)
+            if hasattr(program_generator, 'reinforce_sample'):
+                programs_pred = program_generator.reinforce_sample(
+                    questions,
+                    temperature=1,
+                    argmax=True)
+                scores = execution_engine(feats, programs_pred)
+            else:
+                programs_pred = program_generator(questions)
+                scores = execution_engine(feats, programs_pred, save_activations=False)
             _, preds = scores.data.cpu().max(1)
         else:
             questions = questions.to('cuda')
@@ -781,13 +793,18 @@ def PolicyEvaluation(args):
         raise ValueError
     if args.cont > 0:
         print("Loading model...")
-        model.load(f'./results/experiment_reinforce/model_reinforce_{effective_range_name}.pt')
+        model.load(f'./results/experiment_reinforce/visual/model_reinforce_iep_{effective_range_name}.pt')
+
+    if args.mode == 'visual':
+        fool_model_name = args.fool_model
+    else:
+        fool_model_name = None
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=val_dataloader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
-                               predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet)
+                               predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet, fool_model_name=fool_model_name)
 
-    trainer.train(log_every=10000, save_every=30)
-    #trainer.evaluate(example_range=(0, 1000))
+    trainer.train(log_every=10000, save_every=10)
+    #trainer.evaluate(example_range=(0, 100))
 
 
 if __name__ == '__main__':
@@ -803,10 +820,10 @@ if __name__ == '__main__':
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.4)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=80)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
     parser.add_argument('--range', type=float, default=0.1)

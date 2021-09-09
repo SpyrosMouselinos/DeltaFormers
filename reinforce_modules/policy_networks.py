@@ -1,7 +1,8 @@
 import itertools
+import json
 import os
 import os.path as osp
-import sys
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -9,7 +10,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
-import json
 
 with open(f'{osp.abspath(".")}/data/vocab.json', 'r') as fin:
     parsed_json = json.load(fin)
@@ -18,6 +18,7 @@ with open(f'{osp.abspath(".")}/data/vocab.json', 'r') as fin:
 
 index2q = {v: k for k, v in q2index.items()}
 index2a = {v: k for k, v in a2index.items()}
+
 
 def kwarg_dict_to_device(data_obj, device):
     cpy = {}
@@ -373,7 +374,8 @@ class Wizard:
 
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
-                 batch_tolerance=1, batch_reset=100, name='', predictions_before_pre_calc=None, resnet=None):
+                 batch_tolerance=1, batch_reset=100, name='', predictions_before_pre_calc=None, resnet=None,
+                 fool_model_name=None):
         self.name = name
         self.model = model
         self.game = game
@@ -387,6 +389,7 @@ class Re1nforceTrainer:
         self.batch_reset = batch_reset
         self.predictions_before_pre_calc = predictions_before_pre_calc
         self.resnet = resnet
+        self.fool_model_name = fool_model_name
 
     def quantize(self, action, effect_range=(-0.3, 0.3), steps=6):
         action = action.detach().cpu().numpy()
@@ -407,9 +410,10 @@ class Re1nforceTrainer:
         self.model = self.model.train()
         optimizer = optim.AdamW(
             [{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
-             {'params': self.model.value_model.parameters(), 'lr': self.lr, 'weight_decay': 1e-4},
+             {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
              ])
 
+        limit = 25
         accuracy_drop = []
         confusion_drop = []
         batch_idx = 0
@@ -442,6 +446,10 @@ class Re1nforceTrainer:
                     self.current_predictions_before = None
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
                 best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
+                if best_epoch_confusion_drop > limit:
+                    self.model.save(
+                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
+                    limit += 10
                 _print(
                     f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} %")
                 epochs_passed += 1
@@ -497,9 +505,11 @@ class Re1nforceTrainer:
                 _print(
                     f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
             if batch_idx % save_every == 0 and batch_idx > 0:
-                self.model.save(f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}.pt')
+                self.model.save(
+                    f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
             batch_idx += 1
-        self.model.save(f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}.pt')
+        self.model.save(
+            f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
         plt.figure(figsize=(10, 10))
         plt.title('REINFORCE Accuracy Drop Progress')
         plt.plot(accuracy_drop, 'b')
@@ -514,16 +524,15 @@ class Re1nforceTrainer:
         plt.plot(epoch_accuracy_drop_history, 'b')
         plt.ylabel("Accuracy Drop on 96% State Transformer")
         plt.xlabel("Epochs")
-        plt.savefig(f'./results/experiment_reinforce/epoch_progress{self.name}.png')
+        plt.savefig(f'./results/experiment_reinforce/epoch_progress{self.name}_{self.fool_model_name}.png')
         plt.show()
         plt.close()
 
-    @staticmethod
-    def print_over(path, question, oa, aa):
-        oa = f"Ground Truth: {oa}"
-        ba = f"Model Answer Before: {oa}"
+    def print_over(self, index, path, question, oa, aa):
+        ba = f"Before: {oa}"
+        oa = f"GT: {oa}"
         if aa is not None:
-             aa = f"Model Answer After: {aa}"
+            aa = f"After: {aa}"
 
         def split_q(q):
             if len(q) > 30:
@@ -532,13 +541,14 @@ class Re1nforceTrainer:
 
         img = plt.imread(path)
         plt.figure(figsize=(8, 8))
+        plt.grid(None)
         plt.imshow(img)
         plt.text(0, 30, split_q(question), bbox=dict(fill=False, edgecolor='red', linewidth=1))
         plt.text(85, 15, split_q(oa), bbox=dict(fill=False, edgecolor='green', linewidth=1))
         plt.text(85, 35, split_q(ba), bbox=dict(fill=False, edgecolor='blue', linewidth=1))
         if aa is not None:
             plt.text(85, 55, split_q(aa), bbox=dict(fill=False, edgecolor='yellow', linewidth=1))
-        plt.savefig(path)
+        plt.savefig(f'./results/images/{index}_{self.fool_model_name}.png')
         plt.close()
         return
 
@@ -561,6 +571,13 @@ class Re1nforceTrainer:
         while batch_idx < n_eligible_iterations:
             try:
                 features, org_data, y_real = self.game.extract_features(self.dataloader_iter)
+                if self.predictions_before_pre_calc is not None:
+                    self.current_predictions_before = self.predictions_before_pre_calc[
+                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((
+                                                                                                                    batch_idx % len(
+                                                                                                                self.dataloader)) + 1) * self.batch_size]
+                else:
+                    self.current_predictions_before = None
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
@@ -574,21 +591,30 @@ class Re1nforceTrainer:
             # Calc Reward #
             mixed_actions = self.quantize(action)
             rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
-                action_vector=mixed_actions)
+                action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
+                resnet=self.resnet)
             state_values = state_values.squeeze(1).detach().cpu().numpy()
             drop += (confusion_rewards > 0).sum()
             confusion += (change_rewards > 0).sum()
             worth_discovering += (state_values + 0.1 > 0.05).sum()
 
             if (confusion_rewards > 0).sum() > 0:
-                final_images, final_questions = self.game.state2img(kwarg_dict_to_device(org_data, 'cpu'), delete_every=False, bypass=False,
-                                    retry=True, custom_index=batch_idx)
+                # final_images, final_questions = self.game.state2img(kwarg_dict_to_device(org_data, 'cpu'), delete_every=False, bypass=False,
+                #                    retry=True, custom_index=batch_idx)
+                if batch_idx < 10:
+                    name = '0' + str(batch_idx)
+                else:
+                    name = '10'
+                # if len(final_images) == 1:
+                #    self.print_over(f'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\images\\CLEVR_Rendered_0000{name}.png', ' '.join([index2q[f] for f in final_questions[0].numpy() if f != 0][1:-1]), index2a[y_real.to('cpu').numpy()[0,0] + 4], None)
+                final_images, final_questions = self.game.state2img(kwarg_dict_to_device(state_after, 'cpu'),
+                                                                    delete_every=False, bypass=True,
+                                                                    custom_index=batch_idx)
                 if len(final_images) == 1:
-                    self.print_over(final_images[0], final_questions[0], '1', '2')
-                final_images, final_questions = self.game.state2img(kwarg_dict_to_device(state_after, 'cpu'), delete_every=False, bypass=True,
-                                   custom_index=batch_idx + 1)
-                if len(final_images) == 1:
-                    self.print_over(final_images[0], final_questions[0], '1', '2')
+                    self.print_over(batch_idx, f'./neural_render/images/CLEVR_Rendered_0000{name}.png',
+                                    ' '.join([index2q[f] for f in final_questions[0].numpy() if f != 0][1:-1]),
+                                    index2a[y_real.to('cpu').numpy()[0, 0] + 4],
+                                    index2a[predictions_after.to('cpu').numpy()[0] + 4])
                 # q = bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),
                 #                    mode='before', q=0, a=0)
                 # _ = bird_eye_view(batch_idx, x=scene, y=y_real.to('cpu').numpy(), mode='after', q=q,
