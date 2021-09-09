@@ -291,7 +291,8 @@ def command_template(num_images,
     fill_light_jitter = [str(f) for f in fill_light_jitter]
     back_light_jitter = [str(f) for f in back_light_jitter]
     camera_jitter = [str(f) for f in camera_jitter]
-
+    print("Platform EXEC", flush=True)
+    print(find_platform_exec(), flush=True)
     cmd_template = f'{find_platform_exec()}  -noaudio --background --python {UP_TO_HERE_}/generation/render_images.py > /dev/null 2>&1 -- --num_images={num_images} \
       --key_light_jitter={",".join(key_light_jitter)} \
       --fill_light_jitter={",".join(fill_light_jitter)} \
@@ -366,7 +367,8 @@ def render_image(key_light_jitter=[1, 2, 3, 4, 5],
     cmds = [command_template(**effective_args[f]) for f in effective_args.keys()]
 
     args = [shlex.split(cmd) for cmd in cmds]
-    procs = [Popen(arg, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for arg in args]
+    #stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    procs = [Popen(arg) for arg in args]
     for i, proc in enumerate(procs):
         proc.communicate()
         proc.wait()
