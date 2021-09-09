@@ -367,8 +367,7 @@ def render_image(key_light_jitter=[1, 2, 3, 4, 5],
     cmds = [command_template(**effective_args[f]) for f in effective_args.keys()]
 
     args = [shlex.split(cmd) for cmd in cmds]
-    #stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    procs = [Popen(arg) for arg in args]
+    procs = [Popen(arg, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for arg in args]
     for i, proc in enumerate(procs):
         proc.communicate()
         proc.wait()

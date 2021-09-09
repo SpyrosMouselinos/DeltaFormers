@@ -828,7 +828,7 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
     parser.add_argument('--range', type=float, default=0.1)
     parser.add_argument('--mos_epoch', type=int, default=146)
-    parser.add_argument('--fool_model', type=str, default='sa')
+    parser.add_argument('--fool_model', type=str, default='film')
 
     args = parser.parse_args()
     PolicyEvaluation(args)
