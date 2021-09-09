@@ -27,6 +27,7 @@ def find_platform_slash() -> str:
     elif platform == 'LINUX':
         return '/'
 
+
 PLATFORM_SLASH = find_platform_slash()
 UP_TO_HERE_ = PLATFORM_SLASH.join(os.path.abspath(__file__).split(PLATFORM_SLASH)[:-2]).replace(PLATFORM_SLASH, '/')
 
@@ -56,11 +57,11 @@ parser = argparse.ArgumentParser()
 
 # Input options
 parser.add_argument('--base_scene_blendfile',
-                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}base_scene.blend',
+                    default=UP_TO_HERE_ + PLATFORM_SLASH + 'generation' + PLATFORM_SLASH + 'data' + PLATFORM_SLASH + 'base_scene.blend',
                     help="Base blender file on which all scenes are based; includes " +
                          "ground plane, lights, and camera.")
 parser.add_argument('--properties_json',
-                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}properties.json',
+                    default=UP_TO_HERE_ + PLATFORM_SLASH + 'generation' + PLATFORM_SLASH + 'data' + PLATFORM_SLASH + 'properties.json',
                     help="JSON file defining objects, materials, sizes, and colors. " +
                          "The \"colors\" field maps from CLEVR color names to RGB values; " +
                          "The \"sizes\" field maps from CLEVR size names to scalars used to " +
@@ -68,10 +69,10 @@ parser.add_argument('--properties_json',
                          "from CLEVR material and shape names to .blend files in the " +
                          "--object_material_dir and --shape_dir directories respectively.")
 parser.add_argument('--shape_dir',
-                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}shapes',
+                    default=UP_TO_HERE_ + PLATFORM_SLASH + 'generation' + PLATFORM_SLASH + 'data' + PLATFORM_SLASH + 'shapes',
                     help="Directory where .blend files for object models are stored")
 parser.add_argument('--material_dir',
-                    default=f'{UP_TO_HERE_}generation{PLATFORM_SLASH}data{PLATFORM_SLASH}materials',
+                    default=UP_TO_HERE_ + PLATFORM_SLASH + 'generation' + PLATFORM_SLASH + 'data' + PLATFORM_SLASH + 'materials',
                     help="Directory where .blend files for materials are stored")
 parser.add_argument('--shape_color_combos_json', default=None,
                     help="Optional path to a JSON file mapping shape names to a list of " +
@@ -462,7 +463,7 @@ def add_random_objects(current_item, scene_struct, args, camera, old_behaviour=F
 
     # Check that all objects are at least partially visible in the rendered image
     all_visible = check_visibility(blender_objects, args.min_pixels_per_object)
-    #all_visible = True
+    # all_visible = True
     if not all_visible:
         # If any of the objects are fully occluded then start over; delete all
         # objects from the scene and place them all again.

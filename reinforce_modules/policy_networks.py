@@ -1,6 +1,7 @@
 import itertools
 import os
-
+import os.path as osp
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,9 +9,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
+import json
+#sys.path.insert(0, osp.abspath('.'))
 
-from bandit_train import bird_eye_view
+with open(f'/data/vocab.json', 'r') as fin:
+    parsed_json = json.load(fin)
+    q2index = parsed_json['question_token_to_idx']
+    a2index = parsed_json['answer_token_to_idx']
 
+index2q = {v: k for k, v in q2index.items()}
+index2a = {v: k for k, v in a2index.items()}
 
 def kwarg_dict_to_device(data_obj, device):
     cpy = {}
@@ -398,9 +406,10 @@ class Re1nforceTrainer:
         t = 10
         self.model = self.model.to(self.device)
         self.model = self.model.train()
-        optimizer = optim.AdamW([{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
-                                   {'params': self.model.value_model.parameters(), 'lr': self.lr, 'weight_decay': 1e-4},
-                                   ])
+        optimizer = optim.AdamW(
+            [{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
+             {'params': self.model.value_model.parameters(), 'lr': self.lr, 'weight_decay': 1e-4},
+             ])
 
         accuracy_drop = []
         confusion_drop = []
@@ -417,8 +426,8 @@ class Re1nforceTrainer:
                 if self.predictions_before_pre_calc is not None:
                     self.current_predictions_before = self.predictions_before_pre_calc[
                                                       (batch_idx % len(self.dataloader)) * self.batch_size:((
-                                                                                                                        batch_idx % len(
-                                                                                                                    self.dataloader)) + 1) * self.batch_size]
+                                                                                                                    batch_idx % len(
+                                                                                                                self.dataloader)) + 1) * self.batch_size]
                 else:
                     self.current_predictions_before = None
             except StopIteration:
@@ -428,8 +437,8 @@ class Re1nforceTrainer:
                 if self.predictions_before_pre_calc is not None:
                     self.current_predictions_before = self.predictions_before_pre_calc[
                                                       (batch_idx % len(self.dataloader)) * self.batch_size:((
-                                                                                                                        batch_idx % len(
-                                                                                                                    self.dataloader)) + 1) * self.batch_size]
+                                                                                                                    batch_idx % len(
+                                                                                                                self.dataloader)) + 1) * self.batch_size]
                 else:
                     self.current_predictions_before = None
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
@@ -459,7 +468,7 @@ class Re1nforceTrainer:
             action = torch.cat([actionsx, actionsy], dim=1)
 
             mixed_actions = self.quantize(action)
-            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
+            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
                 action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
                 resnet=self.resnet)
             rewards = torch.FloatTensor(rewards_).to(self.device)
@@ -510,6 +519,30 @@ class Re1nforceTrainer:
         plt.show()
         plt.close()
 
+    @staticmethod
+    def print_over(path, question, oa, aa):
+        oa = f"Ground Truth: {oa}"
+        ba = f"Model Answer Before: {oa}"
+        if aa is not None:
+             aa = f"Model Answer After: {aa}"
+
+        def split_q(q):
+            if len(q) > 30:
+                q = q[:30] + '\n' + split_q(q[30:])
+            return q
+
+        img = plt.imread(path)
+        plt.figure(figsize=(8, 8))
+        plt.imshow(img)
+        plt.text(0, 30, split_q(question), bbox=dict(fill=False, edgecolor='red', linewidth=1))
+        plt.text(85, 15, split_q(oa), bbox=dict(fill=False, edgecolor='green', linewidth=1))
+        plt.text(85, 35, split_q(ba), bbox=dict(fill=False, edgecolor='blue', linewidth=1))
+        if aa is not None:
+            plt.text(85, 55, split_q(aa), bbox=dict(fill=False, edgecolor='yellow', linewidth=1))
+        plt.savefig(path)
+        plt.close()
+        return
+
     def evaluate(self, example_range=(0, 1280)):
         self.model = self.model.to(self.device)
         self.model.zero_grad()
@@ -541,18 +574,26 @@ class Re1nforceTrainer:
             action = torch.cat([actionsx, actionsy], dim=1)
             # Calc Reward #
             mixed_actions = self.quantize(action)
-            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after = self.game.get_rewards(
-                mixed_actions)
+            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
+                action_vector=mixed_actions)
             state_values = state_values.squeeze(1).detach().cpu().numpy()
             drop += (confusion_rewards > 0).sum()
             confusion += (change_rewards > 0).sum()
             worth_discovering += (state_values + 0.1 > 0.05).sum()
 
             if (confusion_rewards > 0).sum() > 0:
-                q = bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),
-                                  mode='before', q=0, a=0)
-                _ = bird_eye_view(batch_idx, x=scene, y=y_real.to('cpu').numpy(), mode='after', q=q,
-                                  a=predictions_after)
+                final_images, final_questions = self.game.state2img(kwarg_dict_to_device(org_data, 'cpu'), delete_every=False, bypass=False,
+                                    retry=True, custom_index=batch_idx)
+                if len(final_images) == 1:
+                    self.print_over(final_images[0], final_questions[0], '1', '2')
+                final_images, final_questions = self.game.state2img(kwarg_dict_to_device(state_after, 'cpu'), delete_every=False, bypass=True,
+                                   custom_index=batch_idx + 1)
+                if len(final_images) == 1:
+                    self.print_over(final_images[0], final_questions[0], '1', '2')
+                # q = bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),
+                #                    mode='before', q=0, a=0)
+                # _ = bird_eye_view(batch_idx, x=scene, y=y_real.to('cpu').numpy(), mode='after', q=q,
+                #                   a=predictions_after)
 
             batch_idx += 1
 

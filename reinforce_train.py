@@ -520,68 +520,84 @@ class ConfusionGame:
             positions.append((x, y, r))
         return True
 
-    def state2img(self, state):
+    def state2img(self, state, bypass=False, custom_index=0, delete_every=True, retry=False):
         wr = []
         images_to_be_rendered = n_possible_images = state['positions'].size(0)
         n_objects_per_image = state['types'][:, :10].sum(1).numpy()
         key_light_jitter = fill_light_jitter = back_light_jitter = [0.5] * n_possible_images
-        camera_jitter = [1] * n_possible_images
-        xs = []
-        ys = []
-        zs = []
-        colors = []
-        shapes = []
-        materials = []
-        sizes = []
-        questions = []
-        for image_idx in range(n_possible_images):
-            tmp_x = []
-            tmp_y = []
-            tmp_z = []
-            tmp_colors = []
-            tmp_shapes = []
-            tmp_materials = []
-            tmp_sizes = []
-            for object_idx in range(n_objects_per_image[image_idx]):
-                tmp_x.append(state['object_positions'][image_idx, object_idx].numpy()[0] * 3)
-                tmp_y.append(state['object_positions'][image_idx, object_idx].numpy()[1] * 3)
-                tmp_z.append(state['object_positions'][image_idx, object_idx].numpy()[2] * 360)
-                tmp_colors.append(state['object_colors'][image_idx, object_idx].item() - 1)
-                tmp_shapes.append(state['object_shapes'][image_idx, object_idx].item() - 1)
-                tmp_materials.append(state['object_materials'][image_idx, object_idx].item() - 1)
-                tmp_sizes.append(state['object_sizes'][image_idx, object_idx].item() - 1)
-            if self.render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes):
-                xs.append(tmp_x)
-                ys.append(tmp_y)
-                zs.append(tmp_z)
-                colors.append(tmp_colors)
-                shapes.append(tmp_shapes)
-                materials.append(tmp_materials)
-                sizes.append(tmp_sizes)
-                questions.append(state['question'][image_idx])
-                wr.append(image_idx)
-            else:
-                images_to_be_rendered -= 1
+        if retry:
+            choices = [1, 0.5, 0.2, -0.2, -0.5, 0, -1]
+        else:
+            choices = [1]
+        for jitter in choices:
+            camera_jitter = [jitter] * n_possible_images
+            xs = []
+            ys = []
+            zs = []
+            colors = []
+            shapes = []
+            materials = []
+            sizes = []
+            questions = []
+            for image_idx in range(n_possible_images):
+                tmp_x = []
+                tmp_y = []
+                tmp_z = []
+                tmp_colors = []
+                tmp_shapes = []
+                tmp_materials = []
+                tmp_sizes = []
+                for object_idx in range(n_objects_per_image[image_idx]):
+                    tmp_x.append(state['object_positions'][image_idx, object_idx].numpy()[0] * 3)
+                    tmp_y.append(state['object_positions'][image_idx, object_idx].numpy()[1] * 3)
+                    tmp_z.append(state['object_positions'][image_idx, object_idx].numpy()[2] * 360)
+                    tmp_colors.append(state['object_colors'][image_idx, object_idx].item() - 1)
+                    tmp_shapes.append(state['object_shapes'][image_idx, object_idx].item() - 1)
+                    tmp_materials.append(state['object_materials'][image_idx, object_idx].item() - 1)
+                    tmp_sizes.append(state['object_sizes'][image_idx, object_idx].item() - 1)
+                if self.render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes) or bypass:
+                    xs.append(tmp_x)
+                    ys.append(tmp_y)
+                    zs.append(tmp_z)
+                    colors.append(tmp_colors)
+                    shapes.append(tmp_shapes)
+                    materials.append(tmp_materials)
+                    sizes.append(tmp_sizes)
+                    questions.append(state['question'][image_idx])
+                    wr.append(image_idx)
+                else:
+                    print(f"Check Failed for index {custom_index}!")
+                    images_to_be_rendered -= 1
 
-        for target in os.listdir('./neural_render/images'):
-            if 'Rendered' in target:
-                try:
-                    os.remove('./neural_render/images/' + target)
-                except:
-                    pass
-        assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
-                                        back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
-                                        per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
-                                        per_image_colors=colors, per_image_sizes=sizes, per_image_materials=materials,
-                                        num_images=images_to_be_rendered, split='Rendered', start_idx=0, workers=4)
-        final_images = []
-        final_questions = []
-        for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
-            is_rendered = pair[1]
-            if is_rendered:
-                final_images.append(real_idx)
-                final_questions.append(questions[fake_idx])
+            if delete_every:
+                for target in os.listdir('./neural_render/images'):
+                    if 'Rendered' in target:
+                        try:
+                            os.remove('./neural_render/images/' + target)
+                        except:
+                            pass
+            assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
+                                            back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
+                                            per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
+                                            per_image_colors=colors, per_image_sizes=sizes,
+                                            per_image_materials=materials,
+                                            num_images=images_to_be_rendered, split='Rendered', start_idx=custom_index,
+                                            workers=4)
+            final_images = []
+            final_questions = []
+            for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
+                is_rendered = pair[1]
+                if is_rendered:
+                    final_images.append(real_idx)
+                    final_questions.append(questions[fake_idx])
+
+            if retry:
+                if len(final_images) == 1:
+                    return final_images, final_questions
+                else:
+                    continue
         return final_images, final_questions
+
 
     def perpare_and_pass(self, resnet, questions, rendered_images):
         img_size = (224, 224)
@@ -630,7 +646,7 @@ class ConfusionGame:
         return send_back
 
     def step(self, action_vector, render=False, current_predictions_before=None, resnet=None):
-        validity = []
+
         predictions_after = []
         if render:
             ### Pre calculate predictions before in order to save time ###
@@ -646,6 +662,7 @@ class ConfusionGame:
         res = self.oracle(programs, scene, None)
         res = translate_answer(res)
         validity = res
+        state_after = self.org_data
 
         if render:
             rendered_images, questions = self.state2img(self.org_data)
@@ -656,14 +673,14 @@ class ConfusionGame:
             predictions_after.append(
                 self.confusion_model(**kwarg_dict_to_device(self.org_data, self.device))[0].detach().cpu().argmax(1))
 
-        return predictions_after, predictions_before, validity, scene
+        return predictions_after, predictions_before, validity, scene, state_after
 
     def get_rewards(self, action_vector, current_predictions_before=None, resnet=None):
-        predictions_after, predictions_before, validity, scene = self.step(action_vector=action_vector,
-                                                                           render=self.render,
-                                                                           current_predictions_before=current_predictions_before,
-                                                                           resnet=resnet
-                                                                           )
+        predictions_after, predictions_before, validity, scene, state_after = self.step(action_vector=action_vector,
+                                                                                        render=self.render,
+                                                                                        current_predictions_before=current_predictions_before,
+                                                                                        resnet=resnet
+                                                                                        )
         pb = []
         pa = []
         not_rendered = []
@@ -687,7 +704,8 @@ class ConfusionGame:
 
         if isinstance(predictions_after, list):
             predictions_after = torch.LongTensor(predictions_after)
-
+        if self.batch_size == 1:
+            validity = [validity]
         answer_stayed_the_same = self.org_answers - torch.stack(validity, dim=0).long()
         answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0).squeeze(1)
         model_answered_correctly = self.org_answers.squeeze(1) - predictions_before
@@ -701,7 +719,7 @@ class ConfusionGame:
         fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
         invalid_scene_rewards = self.invalid_weight * not_rendered
         self.rewards = self.confusion_weight * confusion_rewards.numpy() + self.change_weight * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
-        return self.rewards, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after
+        return self.rewards, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after
 
 
 def PolicyEvaluation(args):
@@ -737,17 +755,18 @@ def PolicyEvaluation(args):
         resnet = None
 
     else:
-        model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc = get_visual_fool_model(device=args.device,
-                                                                                                 load_from=args.load_from,
-                                                                                                 scenes_path=args.scenes_path,
-                                                                                                 questions_path=args.questions_path,
-                                                                                                 clvr_path=args.clvr_path,
-                                                                                                 use_cache=args.use_cache,
-                                                                                                 use_hdf5=args.use_hdf5,
-                                                                                                 batch_size=BS,
-                                                                                                 mode=args.mode,
-                                                                                                 effective_range=effective_range,
-                                                                                                 fool_model=args.fool_model)
+        model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc = get_visual_fool_model(
+            device=args.device,
+            load_from=args.load_from,
+            scenes_path=args.scenes_path,
+            questions_path=args.questions_path,
+            clvr_path=args.clvr_path,
+            use_cache=args.use_cache,
+            use_hdf5=args.use_hdf5,
+            batch_size=BS,
+            mode=args.mode,
+            effective_range=effective_range,
+            fool_model=args.fool_model)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -767,8 +786,8 @@ def PolicyEvaluation(args):
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
                                predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet)
 
-    trainer.train(log_every=100, save_every=1000)
-    # trainer.evaluate(example_range=(0,1000))
+    # trainer.train(log_every=100, save_every=1000)
+    trainer.evaluate(example_range=(0, 1000))
 
 
 if __name__ == '__main__':
@@ -787,10 +806,10 @@ if __name__ == '__main__':
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
-    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
-    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=0.1)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=1)
+    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=1)
+    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
+    parser.add_argument('--range', type=float, default=1)
     parser.add_argument('--mos_epoch', type=int, default=146)
     parser.add_argument('--fool_model', type=str, default='sa')
 
