@@ -566,7 +566,7 @@ class ConfusionGame:
                     questions.append(state['question'][image_idx])
                     wr.append(image_idx)
                 else:
-                    print(f"Check Failed for index {custom_index}!")
+                    #print(f"Check Failed for index {custom_index}!")
                     images_to_be_rendered -= 1
 
             if delete_every:
@@ -786,8 +786,8 @@ def PolicyEvaluation(args):
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
                                predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet)
 
-    # trainer.train(log_every=100, save_every=1000)
-    trainer.evaluate(example_range=(0, 1000))
+    trainer.train(log_every=10000, save_every=30)
+    #trainer.evaluate(example_range=(0, 1000))
 
 
 if __name__ == '__main__':
@@ -803,13 +803,13 @@ if __name__ == '__main__':
     parser.add_argument('--confusion_weight', type=float, help='what kind of experiment to run', default=1)
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
-    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=0.0)
+    parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.4)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=8000)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=1)
-    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=1)
-    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
-    parser.add_argument('--range', type=float, default=1)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=8)
+    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
+    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
+    parser.add_argument('--range', type=float, default=0.1)
     parser.add_argument('--mos_epoch', type=int, default=146)
     parser.add_argument('--fool_model', type=str, default='sa')
 

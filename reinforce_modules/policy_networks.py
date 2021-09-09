@@ -10,9 +10,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import json
-#sys.path.insert(0, osp.abspath('.'))
 
-with open(f'/data/vocab.json', 'r') as fin:
+with open(f'{osp.abspath(".")}/data/vocab.json', 'r') as fin:
     parsed_json = json.load(fin)
     q2index = parsed_json['question_token_to_idx']
     a2index = parsed_json['answer_token_to_idx']
