@@ -5,11 +5,13 @@ import math
 import os
 import os.path as osp
 import sys
-
+from deltalogger.deltalogger import Deltalogger
 import numpy as np
 import numpy.random
 import torch.nn
 import yaml
+
+from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp
 
 sys.path.insert(0, osp.abspath('.'))
 import random
@@ -30,10 +32,6 @@ from skimage.io import imread
 from skimage.transform import resize as imresize
 
 sns.set_style('darkgrid')
-SEED = 1
-torch.manual_seed(SEED)
-random.seed(SEED)
-numpy.random.seed(SEED)
 
 
 def _print(something):
@@ -203,7 +201,7 @@ def accuracy_metric(y_pred, y_true):
 
 def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                    use_cache=False, batch_size=128,
-                   use_hdf5=False, mode='state', effective_range=None, mos_epoch=164):
+                   use_hdf5=False, mode='state', effective_range=None, mos_epoch=164, randomize_range=False):
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -244,7 +242,8 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
                                                                             scenes_path=scenes_path,
                                                                             use_cache=use_cache,
                                                                             return_program=True,
-                                                                            effective_range=effective_range)
+                                                                            effective_range=effective_range,
+                                                                            randomize_range=randomize_range)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
                                                  num_workers=0, shuffle=False, drop_last=False)
@@ -255,19 +254,26 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
 def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                           use_cache=False, batch_size=128,
-                          use_hdf5=False, mode='state', effective_range=None, fool_model=None):
+                          use_hdf5=False, mode='state', effective_range=None, fool_model=None, randomize_range=False):
     if fool_model is None:
         _print("No model is chosen...aborting")
         return
     elif fool_model == 'sa':
         resnet = load_resnet_backbone()
         model_fool = load_cnn_sa()
+        output_shape = 224
     elif fool_model == 'film':
         resnet = load_resnet_backbone()
         model_fool = load_film()
+        output_shape = 224
     elif fool_model == 'iep':
         resnet = load_resnet_backbone()
         model_fool = load_iep()
+        output_shape = 224
+    elif fool_model == 'rnfp':
+        resnet = None
+        model_fool = load_rnfp()
+        output_shape = 128
     else:
         raise NotImplementedError
 
@@ -303,7 +309,7 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
                             scenes_path=scenes_path,
                             use_cache=use_cache,
                             return_program=True,
-                            effective_range=effective_range, output_shape=224)
+                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
                                                  num_workers=0, shuffle=False, drop_last=False)
@@ -315,6 +321,8 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
         predictions_before_pre_calc = inference_with_film(val_dataloader, model_fool, resnet)
     elif fool_model == 'iep':
         predictions_before_pre_calc = inference_with_iep(val_dataloader, model_fool, resnet)
+    elif fool_model == 'rnfp':
+        predictions_before_pre_calc = inference_with_rnfp(val_dataloader, model_fool, None)
     else:
         raise NotImplementedError
 
@@ -605,7 +613,11 @@ class ConfusionGame:
         return final_images, final_questions
 
     def perpare_and_pass(self, resnet, questions, rendered_images):
-        img_size = (224, 224)
+        if resnet is None:
+            # RNFP Model #
+            img_size = (128, 128)
+        else:
+            img_size = (224, 224)
         path = './neural_render/images'
         images = [f'./neural_render/images/{f}' for f in os.listdir(path) if 'Rendered' in f and '.png' in f]
         feat_list = []
@@ -622,8 +634,11 @@ class ConfusionGame:
             std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
             img = (img - mean) / std
             img_var = torch.FloatTensor(img).to('cuda')
-            ### Pass through Resnet ###
-            feat_list.append(resnet(img_var))
+            if resnet is not None:
+                ### Pass through Resnet ###
+                feat_list.append(resnet(img_var))
+            else:
+                feat_list.append(img_var)
 
         ### Stack them with Questions ###
         feats = torch.cat(feat_list, dim=0)
@@ -646,9 +661,16 @@ class ConfusionGame:
         else:
             questions = questions.to('cuda')
             feats = feats.to('cuda')
-            scores = self.confusion_model(questions, feats)
+            if resnet is not None:
+                scores = self.confusion_model(questions, feats)
+            else:
+                scores, _, _ = self.confusion_model(**{'image': feats, 'question': questions})
             _, preds = scores.data.cpu().max(1)
-        preds = [f - 4 for f in preds]
+        if resnet is not None:
+            preds = [f - 4 for f in preds]
+        else:
+            # RNFP Model #
+            pass
         send_back = np.ones(self.batch_size) * (-1)
         k = 0
         for i in range(self.batch_size):
@@ -734,7 +756,10 @@ class ConfusionGame:
         return self.rewards, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after
 
 
-def PolicyEvaluation(args):
+def PolicyEvaluation(args, seed=1, logger=None):
+    torch.manual_seed(seed)
+    random.seed(seed)
+    numpy.random.seed(seed)
     if args.mode == 'state':
         prefix = 'state'
     else:
@@ -762,7 +787,8 @@ def PolicyEvaluation(args):
                                                            batch_size=BS,
                                                            mode=args.mode,
                                                            effective_range=effective_range,
-                                                           mos_epoch=args.mos_epoch)
+                                                           mos_epoch=args.mos_epoch,
+                                                           randomize_range=bool(args.randomize_range))
         predictions_before_pre_calc = None
         resnet = None
 
@@ -778,7 +804,7 @@ def PolicyEvaluation(args):
             batch_size=BS,
             mode=args.mode,
             effective_range=effective_range,
-            fool_model=args.fool_model)
+            fool_model=args.fool_model, randomize_range=bool(args.randomize_range))
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -798,13 +824,15 @@ def PolicyEvaluation(args):
     if args.mode == 'visual':
         fool_model_name = args.fool_model
     else:
-        fool_model_name = None
+        fool_model_name = 'LinAttFormer'
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=val_dataloader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
-                               predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet, fool_model_name=fool_model_name)
+                               predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet,
+                               fool_model_name=fool_model_name)
 
-    trainer.train(log_every=10000, save_every=10)
-    #trainer.evaluate(example_range=(0, 100))
+    best_drop, best_confusion = trainer.train(log_every=-1, save_every=10, logger=logger)
+    # trainer.evaluate(example_range=(0, 100))
+    return best_drop, best_confusion
 
 
 if __name__ == '__main__':
@@ -821,14 +849,32 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=1000)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=80)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=16)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
-    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=0.1)
-    parser.add_argument('--mos_epoch', type=int, default=146)
-    parser.add_argument('--fool_model', type=str, default='film')
+    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
+    parser.add_argument('--range', type=float, default=0.01)
+    parser.add_argument('--randomize_range', type=str, default='True')
+    parser.add_argument('--mos_epoch', type=int, default=164)
+    parser.add_argument('--fool_model', type=str, default='rnfp')
+    parser.add_argument('--seed', type=int, default=1)
+    parser.add_argument('--repeat', type=int, default=1)
 
     args = parser.parse_args()
-    PolicyEvaluation(args)
+
+    if args.repeat == 1:
+        _print(f'Final Results on {args.fool_model}:')
+        logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, 1])
+        _print(PolicyEvaluation(args, args.seed, logger=logger))
+    else:
+        acc_drops = []
+        cons_drops = []
+        for seed in range(0, args.repeat):
+            logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, seed])
+            a, c = PolicyEvaluation(args, seed, logger=logger)
+            acc_drops.append(a)
+            cons_drops.append(c)
+        _print(f'Final Results on {args.fool_model} for games of length: {args.range * 1000} for {args.repeat} RUNS:')
+        _print(f'Accuracy: Min: {min(acc_drops)}, Mean: {sum(acc_drops) / len(acc_drops)}, Max: {max(acc_drops)}')
+        _print(f'Consistency: Min: {min(cons_drops)}, Mean: {sum(cons_drops) / len(cons_drops)}, Max: {max(cons_drops)}')

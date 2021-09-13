@@ -2,6 +2,7 @@ import json
 import os
 import os.path as osp
 import pickle
+import random
 import sys
 
 import h5py
@@ -247,7 +248,16 @@ class StateCLEVR(Dataset):
     """CLEVR dataset made from Scene States."""
 
     def __init__(self, config=None, split='val', scenes_path='data/', questions_path='data/', clvr_path=None,
-                 use_cache=False, return_program=False, effective_range=None):
+                 use_cache=False, return_program=False, effective_range=None, randomize_range=False,
+                 effective_range_offset=0):
+        if randomize_range:
+            if effective_range is not None:
+                effective_range_offset = random.randint(0, 140_000 - effective_range)
+            else:
+                effective_range_offset = 0
+        else:
+            effective_range_offset = effective_range_offset
+        print(f"Effective Range Offset: {effective_range_offset}", flush=True)
         self.return_program = return_program
         if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
             with open(f'{scenes_path}/{split}_dataset.pt', 'rb') as fin:
@@ -260,15 +270,16 @@ class StateCLEVR(Dataset):
                 self.x = info['x']
                 self.y = info['y']
             else:
-                self.x = info['x'][0:int(effective_range)]
-                self.y = info['y'][0:int(effective_range)]
+                self.x = info['x'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
+                self.y = info['y'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
 
             if self.return_program:
                 try:
                     if effective_range is None:
                         self.p = info['p']
                     else:
-                        self.p = info['p'][0:int(effective_range)]
+                        self.p = info['p'][
+                                 int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
                 except KeyError:
                     print("Dataset loaded without program!\n")
                     self.return_program = False
@@ -330,7 +341,16 @@ class ImageCLEVR_HDF5(Dataset):
     """CLEVR dataset made from Images in HDF5 format."""
 
     def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
-                 scenes_path=None, use_cache=False, return_program=False, effective_range=None, output_shape=None):
+                 scenes_path=None, use_cache=False, return_program=False, effective_range=None, output_shape=None,
+                 randomize_range=False,
+                 effective_range_offset=0):
+        if randomize_range:
+            if effective_range is not None:
+                effective_range_offset = random.randint(0, 140_000 - effective_range)
+            else:
+                effective_range_offset = 0
+        else:
+            effective_range_offset = effective_range_offset
         if output_shape is None:
             print("Assuming Image outputs of size 128x128")
             self.shape = 128
@@ -360,14 +380,15 @@ class ImageCLEVR_HDF5(Dataset):
                 self.x = info['x']
                 self.y = info['y']
             else:
-                self.x = info['x'][0:int(effective_range)]
-                self.y = info['y'][0:int(effective_range)]
+                self.x = info['x'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
+                self.y = info['y'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
             if self.return_program:
                 try:
                     if effective_range is None:
                         self.p = info['p']
                     else:
-                        self.p = info['p'][0:int(effective_range)]
+                        self.p = info['p'][
+                                 int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
                 except KeyError:
                     _print("Dataset loaded without program!\n")
                     self.return_program = False
@@ -394,7 +415,8 @@ class ImageCLEVR_HDF5(Dataset):
             with open(f'{clvr_path}/{self.split}_image_dataset_{self.shape}.pt', 'wb') as fout:
                 pickle.dump(info, fout)
         if osp.exists(f'{clvr_path}/{split}_images_{self.shape}.h5'):
-            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', 'r')['image']).astype("uint8")
+            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', 'r')['image']).astype(
+                "uint8")
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
         else:
@@ -405,11 +427,13 @@ class ImageCLEVR_HDF5(Dataset):
             f.create_dataset("image", image_train_shape, h5py.h5t.STD_U8BE)
 
             for i, img_addr in enumerate(available_images):
-                image = Image.open(self.clvr_path + f'/images/{split}/{img_addr}').convert('RGB').resize((self.shape, self.shape), 3)
+                image = Image.open(self.clvr_path + f'/images/{split}/{img_addr}').convert('RGB').resize(
+                    (self.shape, self.shape), 3)
                 f["image"][i] = image
             f.close()
             _print("Image HDF5 written succesfully!\n")
-            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', 'r')['image']).astype("uint8")
+            self.hdf5_file = np.array(h5py.File(f'{clvr_path}/{split}_images_{self.shape}.h5', 'r')['image']).astype(
+                "uint8")
             self.n_images = self.hdf5_file.shape[0]
             _print("Image HDF5 loaded succesfully!\n")
 
@@ -442,16 +466,25 @@ class ImageCLEVR_HDF5(Dataset):
 
 class MixCLEVR_HDF5(Dataset):
     def __init__(self, config=None, split='val', scenes_path='data/', clvr_path='data/', questions_path='data/',
-                 use_cache=False, return_program=False, effective_range=None, output_shape=None):
+                 use_cache=False, return_program=False, effective_range=None, output_shape=None, randomize_range=False):
+        if randomize_range:
+            if effective_range is not None:
+                effective_range_offset = random.randint(0, 140_000 - effective_range)
+            else:
+                effective_range_offset = 0
+        else:
+            effective_range_offset = 0
+        print(f"Effective Range Offset: {effective_range_offset}", flush=True)
         self.return_program = return_program
         self.split = split
         self.clvr_path = clvr_path
         self.state_ds = StateCLEVR(config=None, split=split, scenes_path=scenes_path, questions_path=questions_path,
                                    clvr_path=clvr_path, use_cache=use_cache, return_program=True,
-                                   effective_range=effective_range)
+                                   effective_range=effective_range, effective_range_offset=effective_range_offset)
         self.image_ds = ImageCLEVR_HDF5(config=None, split=split, clvr_path=clvr_path, questions_path=questions_path,
                                         scenes_path=scenes_path, use_cache=use_cache, return_program=return_program,
-                                        effective_range=effective_range, output_shape=output_shape)
+                                        effective_range=effective_range, output_shape=output_shape,
+                                        effective_range_offset=effective_range_offset)
 
         if len(self.state_ds) != len(self.image_ds):
             print("Oops")

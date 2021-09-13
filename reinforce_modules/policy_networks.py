@@ -400,8 +400,8 @@ class Re1nforceTrainer:
                 quantized_actions[i, j] = effect_range[0] + action[i, j] * ((effect_range[1] - effect_range[0]) / steps)
         return quantized_actions
 
-    def train(self, log_every=100, save_every=10_000, example_range=(0, 1000)):
-        if self.resnet is None:
+    def train(self, log_every=100, save_every=10_000, logger=None):
+        if self.fool_model_name not in ['sa', 'iep', 'film', 'rnfp']:
             prefix = 'state'
         else:
             prefix = 'visual'
@@ -413,7 +413,7 @@ class Re1nforceTrainer:
              {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
              ])
 
-        limit = 25
+        limit = 1
         accuracy_drop = []
         confusion_drop = []
         batch_idx = 0
@@ -449,9 +449,14 @@ class Re1nforceTrainer:
                 if best_epoch_confusion_drop > limit:
                     self.model.save(
                         f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
-                    limit += 10
+                    logger.session['rl_agent'].upload(
+                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
+                    limit += 1
                 _print(
                     f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} %")
+                if logger is not None:
+                    logger.log({'Epoch': epochs_passed, 'Drop': best_epoch_accuracy_drop,
+                                'Consistency': best_epoch_confusion_drop})
                 epochs_passed += 1
                 epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(self.dataloader))
                 epoch_confusion_drop_history.append(epoch_confusion_drop / len(self.dataloader))
@@ -488,7 +493,7 @@ class Re1nforceTrainer:
             total_loss = loss
 
             total_loss.backward()
-            if batch_idx % log_every == 0 and batch_idx > 0:
+            if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
                 _print(
                     f"Total Loss: {total_loss.detach().cpu().item()} | Total Reward: {rewards_.sum()}")
 
@@ -501,32 +506,42 @@ class Re1nforceTrainer:
             confusion_drop.append(batch_confusion)
             epoch_accuracy_drop += batch_accuracy
             epoch_confusion_drop += batch_confusion
-            if batch_idx % log_every == 0 and batch_idx > 0:
+            if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
                 _print(
                     f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
             if batch_idx % save_every == 0 and batch_idx > 0:
                 self.model.save(
                     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
             batch_idx += 1
+
         self.model.save(
             f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
-        plt.figure(figsize=(10, 10))
-        plt.title('REINFORCE Accuracy Drop Progress')
-        plt.plot(accuracy_drop, 'b')
-        plt.ylabel("Accuracy Drop on 96% State Transformer")
-        plt.xlabel("Training Iterations")
-        plt.savefig('./results/experiment_reinforce/progress.png')
-        plt.show()
-        plt.close()
 
-        plt.figure(figsize=(10, 10))
-        plt.title('REINFORCE Epoch Accuracy Drop Progress')
-        plt.plot(epoch_accuracy_drop_history, 'b')
-        plt.ylabel("Accuracy Drop on 96% State Transformer")
-        plt.xlabel("Epochs")
-        plt.savefig(f'./results/experiment_reinforce/epoch_progress{self.name}_{self.fool_model_name}.png')
-        plt.show()
-        plt.close()
+        # fig1 = plt.figure(figsize=(10, 10))
+        # plt.title(f'REINFORCE Epoch Consistency Drop on {self.fool_model_name}')
+        # plt.plot(epoch_confusion_drop_history, 'b')
+        # plt.ylabel("Consistency Drop")
+        # plt.xlabel("Epochs")
+        # plt.savefig(f'./results/experiment_reinforce/epoch_consistency{self.name}_{self.fool_model_name}.png')
+        # if logger is not None:
+        #     logger.image_store('consistency', fig1)
+        # plt.show()
+        # plt.close()
+        #
+        # plt.figure(figsize=(10, 10))
+        # plt.title(f'REINFORCE Epoch Accuracy Drop on {self.fool_model_name}')
+        # plt.plot(epoch_accuracy_drop_history, 'b')
+        # plt.ylabel("Accuracy Drop")
+        # plt.xlabel("Epochs")
+        # plt.savefig(f'./results/experiment_reinforce/epoch_drop{self.name}_{self.fool_model_name}.png')
+        # if logger is not None:
+        #     logger.image_store('drop', fig1)
+        # plt.show()
+        # plt.close()
+        if logger is not None:
+            logger.log({'Epoch': epochs_passed, 'Drop': max(epoch_accuracy_drop_history),
+                        'Consistency': max(epoch_confusion_drop_history)})
+        return max(epoch_accuracy_drop_history), max(epoch_confusion_drop_history)
 
     def print_over(self, index, path, question, oa, aa):
         ba = f"Before: {oa}"
