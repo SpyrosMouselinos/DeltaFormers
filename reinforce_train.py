@@ -806,7 +806,7 @@ def PolicyEvaluation(args, seed=1, logger=None):
             effective_range=effective_range,
             fool_model=args.fool_model, randomize_range=eval(args.randomize_range))
 
-    train_duration = args.train_duration
+    train_duration = args.train_duration * BS
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
                             confusion_weight=args.confusion_weight, change_weight=args.change_weight,
                             fail_weight=args.fail_weight, invalid_weight=args.invalid_weight, mode=args.mode,
@@ -849,7 +849,7 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=80)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=200)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
@@ -862,7 +862,6 @@ if __name__ == '__main__':
     parser.add_argument('--repeat', type=int, default=10)
 
     args = parser.parse_args()
-
     if args.repeat == 1:
         _print(f'Final Results on {args.fool_model}:')
         logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, 1])
