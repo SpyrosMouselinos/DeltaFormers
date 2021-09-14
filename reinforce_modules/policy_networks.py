@@ -420,6 +420,7 @@ class Re1nforceTrainer:
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
+        patience = 20
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
@@ -446,6 +447,8 @@ class Re1nforceTrainer:
                     self.current_predictions_before = None
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
                 best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
+                if best_epoch_accuracy_drop < max(epoch_accuracy_drop_history[-10:]) and len(epoch_accuracy_drop_history) > 0:
+                    patience -= 1
                 if best_epoch_confusion_drop > limit:
                     self.model.save(
                         f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
@@ -512,6 +515,8 @@ class Re1nforceTrainer:
             if batch_idx % save_every == 0 and batch_idx > 0:
                 self.model.save(
                     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
+            if patience == 0:
+                break
             batch_idx += 1
 
         self.model.save(

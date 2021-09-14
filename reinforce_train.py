@@ -788,7 +788,7 @@ def PolicyEvaluation(args, seed=1, logger=None):
                                                            mode=args.mode,
                                                            effective_range=effective_range,
                                                            mos_epoch=args.mos_epoch,
-                                                           randomize_range=bool(args.randomize_range))
+                                                           randomize_range=eval(args.randomize_range))
         predictions_before_pre_calc = None
         resnet = None
 
@@ -804,7 +804,7 @@ def PolicyEvaluation(args, seed=1, logger=None):
             batch_size=BS,
             mode=args.mode,
             effective_range=effective_range,
-            fool_model=args.fool_model, randomize_range=bool(args.randomize_range))
+            fool_model=args.fool_model, randomize_range=eval(args.randomize_range))
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -851,15 +851,15 @@ if __name__ == '__main__':
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=80)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=16)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
-    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='state')
-    parser.add_argument('--range', type=float, default=0.01)
+    parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
+    parser.add_argument('--range', type=float, default=0.1)
     parser.add_argument('--randomize_range', type=str, default='True')
     parser.add_argument('--mos_epoch', type=int, default=164)
     parser.add_argument('--fool_model', type=str, default='rnfp')
-    parser.add_argument('--seed', type=int, default=1)
-    parser.add_argument('--repeat', type=int, default=1)
+    parser.add_argument('--seed', type=int, default=100)
+    parser.add_argument('--repeat', type=int, default=10)
 
     args = parser.parse_args()
 
@@ -870,8 +870,9 @@ if __name__ == '__main__':
     else:
         acc_drops = []
         cons_drops = []
-        for seed in range(0, args.repeat):
-            logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, seed])
+        for seed in range(args.seed, args.repeat  + args.seed):
+            experiment_number = seed - args.seed
+            logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, experiment_number])
             a, c = PolicyEvaluation(args, seed, logger=logger)
             acc_drops.append(a)
             cons_drops.append(c)

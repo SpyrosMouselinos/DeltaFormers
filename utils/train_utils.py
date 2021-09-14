@@ -470,6 +470,7 @@ class MixCLEVR_HDF5(Dataset):
         if randomize_range:
             if effective_range is not None:
                 effective_range_offset = random.randint(0, 140_000 - effective_range)
+                effective_range_offset = (effective_range_offset // 10) * 10
             else:
                 effective_range_offset = 0
         else:
