@@ -408,10 +408,16 @@ class Re1nforceTrainer:
         t = 10
         self.model = self.model.to(self.device)
         self.model = self.model.train()
-        optimizer = optim.AdamW(
-            [{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
-             {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
-             ])
+        if self.lr >= 5e-4:
+            optimizer = optim.AdamW(
+                [{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
+                 {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
+                 ])
+        else:
+            optimizer = optim.AdamW(
+                [{'params': self.model.final_model.parameters(), 'lr': self.lr, 'weight_decay': 1e-4},
+                 {'params': self.model.value_model.parameters(), 'lr': self.lr, 'weight_decay': 1e-4},
+                 ])
 
         limit = 1
         accuracy_drop = []
