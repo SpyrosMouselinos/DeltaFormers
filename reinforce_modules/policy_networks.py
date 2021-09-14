@@ -447,7 +447,7 @@ class Re1nforceTrainer:
                     self.current_predictions_before = None
                 best_epoch_accuracy_drop = epoch_accuracy_drop / len(self.dataloader)
                 best_epoch_confusion_drop = epoch_confusion_drop / len(self.dataloader)
-                if best_epoch_accuracy_drop < max(epoch_accuracy_drop_history[-10:]) and len(epoch_accuracy_drop_history) > 0:
+                if len(epoch_accuracy_drop_history) > 0 and best_epoch_accuracy_drop < max(epoch_accuracy_drop_history[-10:]):
                     patience -= 1
                 if best_epoch_confusion_drop > limit:
                     self.model.save(
