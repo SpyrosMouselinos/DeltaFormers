@@ -426,7 +426,7 @@ class Re1nforceTrainer:
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
-        patience = 25
+        patience = 50
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
@@ -456,6 +456,8 @@ class Re1nforceTrainer:
                 if len(epoch_accuracy_drop_history) > 0 and best_epoch_accuracy_drop <= sum(
                         epoch_accuracy_drop_history[-15:]) / len(epoch_accuracy_drop_history[-15:]):
                     patience -= 1
+                else:
+                    patience += 1
 
                 if best_epoch_confusion_drop > limit:
                     self.model.save(
