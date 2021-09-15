@@ -477,57 +477,60 @@ class Re1nforceTrainer:
                 epoch_confusion_drop = 0
 
             # Forward Pass #
+            try:
+                sx, sy, state_values = self.model(
+                    features, org_data['question'])
+                action_probs_x = torch.distributions.Categorical(
+                    torch.softmax(torch.cat([f.unsqueeze(1) for f in sx], dim=1) / t, dim=2))
+                action_probs_y = torch.distributions.Categorical(
+                    torch.softmax(torch.cat([f.unsqueeze(1) for f in sy], dim=1) / t, dim=2))
 
-            sx, sy, state_values = self.model(
-                features, org_data['question'])
-            action_probs_x = torch.distributions.Categorical(
-                torch.softmax(torch.cat([f.unsqueeze(1) for f in sx], dim=1) / t, dim=2))
-            action_probs_y = torch.distributions.Categorical(
-                torch.softmax(torch.cat([f.unsqueeze(1) for f in sy], dim=1) / t, dim=2))
+                actionsx = action_probs_x.sample()
+                actionsy = action_probs_y.sample()
 
-            actionsx = action_probs_x.sample()
-            actionsy = action_probs_y.sample()
+                log_probs = action_probs_x.log_prob(actionsx) + action_probs_y.log_prob(actionsy)
+                log_probs = log_probs.sum(1)
+                action = torch.cat([actionsx, actionsy], dim=1)
 
-            log_probs = action_probs_x.log_prob(actionsx) + action_probs_y.log_prob(actionsy)
-            log_probs = log_probs.sum(1)
-            action = torch.cat([actionsx, actionsy], dim=1)
+                mixed_actions = self.quantize(action)
+                rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
+                    action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
+                    resnet=self.resnet)
+                rewards = torch.FloatTensor(rewards_).to(self.device)
+                advantages = rewards - state_values.squeeze(1).detach()
 
-            mixed_actions = self.quantize(action)
-            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
-                action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
-                resnet=self.resnet)
-            rewards = torch.FloatTensor(rewards_).to(self.device)
-            advantages = rewards - state_values.squeeze(1).detach()
+                ploss = -log_probs * advantages
+                vloss = (state_values.squeeze(1) - rewards.detach()) ** 2
+                loss = ploss + vloss
+                loss = loss.mean()
+                total_loss = loss
 
-            ploss = -log_probs * advantages
-            vloss = (state_values.squeeze(1) - rewards.detach()) ** 2
-            loss = ploss + vloss
-            loss = loss.mean()
-            total_loss = loss
+                total_loss.backward()
+                if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
+                    _print(
+                        f"Total Loss: {total_loss.detach().cpu().item()} | Total Reward: {rewards_.sum()}")
 
-            total_loss.backward()
-            if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
-                _print(
-                    f"Total Loss: {total_loss.detach().cpu().item()} | Total Reward: {rewards_.sum()}")
-
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
-            optimizer.step()
-            optimizer.zero_grad()
-            batch_accuracy = 100 * (confusion_rewards.mean()).item()
-            batch_confusion = 100 * (change_rewards.mean()).item()
-            accuracy_drop.append(batch_accuracy)
-            confusion_drop.append(batch_confusion)
-            epoch_accuracy_drop += batch_accuracy
-            epoch_confusion_drop += batch_confusion
-            if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
-                _print(
-                    f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
-            if batch_idx % save_every == 0 and batch_idx > 0:
-                self.model.save(
-                    f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
-            if patience == 0:
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
+                optimizer.step()
+                optimizer.zero_grad()
+                batch_accuracy = 100 * (confusion_rewards.mean()).item()
+                batch_confusion = 100 * (change_rewards.mean()).item()
+                accuracy_drop.append(batch_accuracy)
+                confusion_drop.append(batch_confusion)
+                epoch_accuracy_drop += batch_accuracy
+                epoch_confusion_drop += batch_confusion
+                if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
+                    _print(
+                        f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
+                if batch_idx % save_every == 0 and batch_idx > 0:
+                    self.model.save(
+                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
+                if patience == 0:
+                    break
+                batch_idx += 1
+            except KeyboardInterrupt:
+                _print("Handling Graceful Exit...\n")
                 break
-            batch_idx += 1
 
         self.model.save(
             f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
