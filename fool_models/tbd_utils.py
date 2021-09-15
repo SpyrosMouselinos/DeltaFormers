@@ -125,8 +125,8 @@ def inference_with_tbh(loader=None, model=None, resnet_extractor=None):
     print(f"Testing for {len(loader)} samples")
     print()
     for batch in loader:
-        # (_, iq), answer, _ = batch
-        iq, answers = batch
+        (_, iq), answers, _ = batch
+        #iq, answers = batch
         image = iq['image'].to('cuda')
         questions_var = iq['question'].to('cuda')
         feats_var = resnet_extractor(image)
@@ -146,6 +146,7 @@ def inference_with_tbh(loader=None, model=None, resnet_extractor=None):
             correct_preds.append(execution_engine.translate_codes[item] - 4)
 
         for item in correct_preds:
+            # For line 684 in reinforce_train.py
             final_preds.append(item)
 
         num_correct += (torch.LongTensor(correct_preds) == (answers.squeeze())).sum()
@@ -158,7 +159,7 @@ def inference_with_tbh(loader=None, model=None, resnet_extractor=None):
     return final_preds
 
 
-model = load_tbd()
-loader = load_loader()
-resnet_extractor = load_resnet_backbone()
-inference_with_tbh(loader=loader, model=model, resnet_extractor=resnet_extractor)
+# model = load_tbd()
+# loader = load_loader()
+# resnet_extractor = load_resnet_backbone()
+# inference_with_tbh(loader=loader, model=model, resnet_extractor=resnet_extractor)

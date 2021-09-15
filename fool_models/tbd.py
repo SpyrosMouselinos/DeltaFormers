@@ -321,6 +321,9 @@ class _Seq2Seq(nn.Module):
         self.START = start_token
         self.END = end_token
 
+    def do_not_trust_reinforce(self):
+        return
+
     def get_dims(self, x=None, y=None):
         V_in = self.encoder_embed.num_embeddings
         V_out = self.decoder_embed.num_embeddings

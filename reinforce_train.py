@@ -12,6 +12,8 @@ import torch.nn
 import yaml
 
 from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp
+from fool_models.tbd_utils import load_resnet_backbone as load_resnet_tbd_backbone
+from fool_models.tbd_utils import load_tbd, inference_with_tbh
 
 sys.path.insert(0, osp.abspath('.'))
 import random
@@ -274,6 +276,10 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
         resnet = None
         model_fool = load_rnfp()
         output_shape = 128
+    elif fool_model == 'tbd':
+        resnet = load_resnet_tbd_backbone()
+        model_fool = load_tbd()
+        output_shape = 224
     else:
         raise NotImplementedError
 
@@ -323,6 +329,8 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
         predictions_before_pre_calc = inference_with_iep(val_dataloader, model_fool, resnet)
     elif fool_model == 'rnfp':
         predictions_before_pre_calc = inference_with_rnfp(val_dataloader, model_fool, None)
+    elif fool_model == 'tbd':
+        predictions_before_pre_calc = inference_with_tbh(val_dataloader, model_fool, resnet)
     else:
         raise NotImplementedError
 
@@ -645,14 +653,22 @@ class ConfusionGame:
         questions = torch.cat([f.unsqueeze(0) for f in questions], dim=0)
         ### Pass through Model ###
         if isinstance(self.confusion_model, tuple):
+
             questions = questions.to('cuda')
             feats = feats.to('cuda')
             program_generator, execution_engine = self.confusion_model
             if hasattr(program_generator, 'reinforce_sample'):
-                programs_pred = program_generator.reinforce_sample(
-                    questions,
-                    temperature=1,
-                    argmax=True)
+                if hasattr(program_generator, 'do_not_trust_reinforce'):
+                    progs = []
+                    for i in range(questions.size(0)):
+                        program = program_generator.reinforce_sample(questions[i, :].view(1, -1))
+                        progs.append(program.cpu().numpy().squeeze())
+                    programs_pred = torch.LongTensor(np.asarray(progs)).to('cuda')
+                else:
+                    programs_pred = program_generator.reinforce_sample(
+                        questions,
+                        temperature=1,
+                        argmax=True)
                 scores = execution_engine(feats, programs_pred)
             else:
                 programs_pred = program_generator(questions)
@@ -667,7 +683,15 @@ class ConfusionGame:
                 scores, _, _ = self.confusion_model(**{'image': feats, 'question': questions})
             _, preds = scores.data.cpu().max(1)
         if resnet is not None:
-            preds = [f - 4 for f in preds]
+            # TBD Model #
+            if isinstance(self.confusion_model, tuple) and hasattr(program_generator, 'reinforce_sample') and hasattr(
+                    program_generator, 'do_not_trust_reinforce'):
+                correct_preds = []
+                for item in preds.detach().cpu().numpy():
+                    correct_preds.append(execution_engine.translate_codes[item] - 4)
+                    preds = correct_preds
+            else:
+                preds = [f - 4 for f in preds]
         else:
             # RNFP Model #
             pass
@@ -851,15 +875,15 @@ if __name__ == '__main__':
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
     parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=200)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=5)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=0.1)
+    parser.add_argument('--range', type=float, default=0.01)
     parser.add_argument('--randomize_range', type=str, default='True')
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='rnfp')
+    parser.add_argument('--fool_model', type=str, default='tbd')
     parser.add_argument('--seed', type=int, default=100)
-    parser.add_argument('--repeat', type=int, default=10)
+    parser.add_argument('--repeat', type=int, default=1)
 
     args = parser.parse_args()
     if args.repeat == 1:
@@ -869,7 +893,7 @@ if __name__ == '__main__':
     else:
         acc_drops = []
         cons_drops = []
-        for seed in range(args.seed, args.repeat  + args.seed):
+        for seed in range(args.seed, args.repeat + args.seed):
             experiment_number = seed - args.seed
             logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, experiment_number])
             a, c = PolicyEvaluation(args, seed, logger=logger)
@@ -877,4 +901,5 @@ if __name__ == '__main__':
             cons_drops.append(c)
         _print(f'Final Results on {args.fool_model} for games of length: {args.range * 1000} for {args.repeat} RUNS:')
         _print(f'Accuracy: Min: {min(acc_drops)}, Mean: {sum(acc_drops) / len(acc_drops)}, Max: {max(acc_drops)}')
-        _print(f'Consistency: Min: {min(cons_drops)}, Mean: {sum(cons_drops) / len(cons_drops)}, Max: {max(cons_drops)}')
+        _print(
+            f'Consistency: Min: {min(cons_drops)}, Mean: {sum(cons_drops) / len(cons_drops)}, Max: {max(cons_drops)}')
