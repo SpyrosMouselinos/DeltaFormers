@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 import json
 from skimage.measure import find_contours
-from neural_render.blender_render_utils.constants import find_platform_slash
+from neural_render.blender_render_utils.constants import find_platform_slash, find_platform
 from matplotlib.patches import Polygon
 import pathlib
 import os
@@ -127,12 +127,14 @@ class MDetrWrapper:
         plt.show()
 
     def load_mdetr(self):
-        temp = pathlib.PosixPath
-        pathlib.PosixPath = pathlib.WindowsPath
+        if find_platform() == 'WIN':
+            temp = pathlib.PosixPath
+            pathlib.PosixPath = pathlib.WindowsPath
         model_qa = torch.hub.load('ashkamath/mdetr:main', 'mdetr_clevr', pretrained=True, return_postprocessor=False)
         model_qa = model_qa.cuda()
         model_qa.eval()
-        pathlib.PosixPath = temp
+        if find_platform() == 'WIN':
+            pathlib.PosixPath = temp
         self.model = model_qa
         return self.model
 
