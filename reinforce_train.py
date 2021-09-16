@@ -896,8 +896,8 @@ if __name__ == '__main__':
     parser.add_argument('--randomize_range', type=str, default='True')
     parser.add_argument('--mos_epoch', type=int, default=164)
     parser.add_argument('--fool_model', type=str, default='mdetr')
-    parser.add_argument('--seed', type=int, default=1234)
-    parser.add_argument('--repeat', type=int, default=19)
+    parser.add_argument('--seed', type=int, default=543)
+    parser.add_argument('--repeat', type=int, default=17)
 
     args = parser.parse_args()
     if args.repeat == 1:

@@ -426,7 +426,7 @@ class Re1nforceTrainer:
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
-        patience = 50
+        patience = 30
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
@@ -456,8 +456,6 @@ class Re1nforceTrainer:
                 if len(epoch_accuracy_drop_history) > 0 and best_epoch_accuracy_drop <= sum(
                         epoch_accuracy_drop_history[-15:]) / len(epoch_accuracy_drop_history[-15:]):
                     patience -= 1
-                else:
-                    patience += 1
 
                 if best_epoch_confusion_drop > limit:
                     self.model.save(
@@ -466,7 +464,7 @@ class Re1nforceTrainer:
                         f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
                     limit += 1
                 _print(
-                    f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} %")
+                    f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} % | Patience: {patience}")
                 if logger is not None:
                     logger.log({'Epoch': epochs_passed, 'Drop': best_epoch_accuracy_drop,
                                 'Consistency': best_epoch_confusion_drop})
