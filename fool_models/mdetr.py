@@ -176,20 +176,26 @@ class MDetrWrapper:
                 assert False, "must be one of the answer types"
         return answers
 
-    def __call__(self, images, questions):
-        ImageBatchSize = images.size(0)
-        QuestionBatchSize = questions.size(0)
+    def eval(self):
+        return
+
+    def to(self, where):
+        return
+
+    def __call__(self, image, question):
+        ImageBatchSize = image.size(0)
+        QuestionBatchSize = question.size(0)
         assert ImageBatchSize == QuestionBatchSize
         # Images will be propagated as they are #
         # Questions will be first converted from indexes to tokens for compatibility #
         answers = []
         for index in range(ImageBatchSize):
-            image_ = images[index, :]
-            question_ = questions[index, :].cpu().numpy()
+            image_ = image[index, :]
+            question_ = question[index, :].cpu().numpy()
             restored_question = ' '.join([idx_to_question_token[f] for f in question_ if f not in [1,2,0]])
             answer = self.inference(im=image_, caption=restored_question, plot=False)
             restored_answer = answer_token_to_idx[answer]
             answers.append(restored_answer)
 
         torch_answers = torch.LongTensor(answers)
-        return torch_answers
+        return torch_answers, None, None

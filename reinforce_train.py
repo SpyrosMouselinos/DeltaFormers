@@ -11,6 +11,7 @@ import numpy.random
 import torch.nn
 import yaml
 
+from fool_models.mdter_utils import load_mdetr, inference_with_mdetr
 from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp
 from fool_models.tbd_utils import load_resnet_backbone as load_resnet_tbd_backbone
 from fool_models.tbd_utils import load_tbd, inference_with_tbh
@@ -280,6 +281,10 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
         resnet = load_resnet_tbd_backbone()
         model_fool = load_tbd()
         output_shape = 224
+    elif fool_model == 'mdetr':
+        resnet = None
+        model_fool = load_mdetr()
+        output_shape = 224
     else:
         raise NotImplementedError
 
@@ -331,6 +336,8 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
         predictions_before_pre_calc = inference_with_rnfp(val_dataloader, model_fool, None)
     elif fool_model == 'tbd':
         predictions_before_pre_calc = inference_with_tbh(val_dataloader, model_fool, resnet)
+    elif fool_model == 'mdetr':
+        predictions_before_pre_calc = inference_with_mdetr(val_dataloader, model_fool, None)
     else:
         raise NotImplementedError
 
@@ -622,8 +629,12 @@ class ConfusionGame:
 
     def perpare_and_pass(self, resnet, questions, rendered_images):
         if resnet is None:
-            # RNFP Model #
-            img_size = (128, 128)
+            if hasattr(self.confusion_model, 'COLORS'):
+                # MDetr Model #
+                img_size = (224, 224)
+            else:
+                # RNFP Model #
+                img_size = (128, 128)
         else:
             img_size = (224, 224)
         path = './neural_render/images'
@@ -681,7 +692,10 @@ class ConfusionGame:
                 scores = self.confusion_model(questions, feats)
             else:
                 scores, _, _ = self.confusion_model(**{'image': feats, 'question': questions})
-            _, preds = scores.data.cpu().max(1)
+            if hasattr(self.confusion_model, 'COLORS'):
+                preds = scores - 4
+            else:
+                _, preds = scores.data.cpu().max(1)
         if resnet is not None:
             # TBD Model #
             if isinstance(self.confusion_model, tuple) and hasattr(program_generator, 'reinforce_sample') and hasattr(
@@ -693,7 +707,7 @@ class ConfusionGame:
             else:
                 preds = [f - 4 for f in preds]
         else:
-            # RNFP Model #
+            # RNFP Model / MDetr Model#
             pass
         send_back = np.ones(self.batch_size) * (-1)
         k = 0
@@ -881,7 +895,7 @@ if __name__ == '__main__':
     parser.add_argument('--range', type=float, default=0.01)
     parser.add_argument('--randomize_range', type=str, default='True')
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='tbd')
+    parser.add_argument('--fool_model', type=str, default='mdetr')
     parser.add_argument('--seed', type=int, default=1234)
     parser.add_argument('--repeat', type=int, default=19)
 

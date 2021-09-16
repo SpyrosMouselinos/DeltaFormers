@@ -42,17 +42,17 @@ def inference_with_mdetr(loader=None, model=None, resnet_extractor=None):
     print(f"Testing for {len(loader)} samples")
     print()
     for batch in loader:
-        # (_, iq), answers, _ = batch
-        iq, answers = batch
+        (_, iq), answers, _ = batch
+        #iq, answers = batch
         image = iq['image']
         questions_var = iq['question']
-        preds = model(image, questions_var)
+        preds, _, _ = model(image, questions_var)
 
         for item in preds:
             # For line 684 in reinforce_train.py
-            final_preds.append(item)
+            final_preds.append(item - 4)
 
-        num_correct += (torch.LongTensor(preds) == (answers.squeeze() - 4)).sum()
+        num_correct += (torch.LongTensor(preds) == (answers.squeeze() + 4)).sum()
         num_samples += preds.size(0)
         if num_samples % 1000 == 0:
             print(f'Ran {num_samples} samples at {float(num_correct) / num_samples} accuracy')
@@ -62,6 +62,6 @@ def inference_with_mdetr(loader=None, model=None, resnet_extractor=None):
     return final_preds
 
 
-loader = load_loader()
-model = load_mdetr()
-boo = inference_with_mdetr(loader, model, None)
+# loader = load_loader()
+# model = load_mdetr()
+# boo = inference_with_mdetr(loader, model, None)
