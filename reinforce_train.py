@@ -114,17 +114,21 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=3)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=30)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=5)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
     parser.add_argument('--range', type=float, default=0.01)
-    parser.add_argument('--randomize_range', type=str, default='True')
+    # TODO: DELETE THIS
+    # TODO: DELETE THIS
+    parser.add_argument('--randomize_range', type=str, default='False')
+    # TODO: DELETE THIS
+    # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='mdetr')
-    parser.add_argument('--seed', type=int, default=543)
-    parser.add_argument('--repeat', type=int, default=17)
+    parser.add_argument('--fool_model', type=str, default='rnfp')
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--repeat', type=int, default=1)
 
     args = parser.parse_args()
     if args.repeat == 1:

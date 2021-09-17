@@ -288,7 +288,7 @@ class PolicyNet(nn.Module):
         self.final_model = FFNet(512, dropout)
         self.value_model = BVNet(512)
 
-    def forward(self, x, q):
+    def forward(self, x, q=None):
         # _, (q_summary, _) = self.question_model(q)
         # q_summary = torch.squeeze(q_summary, 0)
         # x = x / torch.norm(x, 2, 1, True)

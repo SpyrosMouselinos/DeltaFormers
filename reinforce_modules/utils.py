@@ -1,4 +1,5 @@
 import ast
+import copy
 import itertools
 import json
 import math
@@ -8,6 +9,7 @@ import sys
 import numpy as np
 import torch.nn
 import yaml
+from torch import optim
 
 from fool_models.mdter_utils import load_mdetr, inference_with_mdetr
 from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp
@@ -21,7 +23,7 @@ from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5, MixCLEVR_HDF5
 import matplotlib.pyplot as plt
 import seaborn as sns
-from reinforce_modules.policy_networks import EmptyNetwork
+from reinforce_modules.policy_networks import EmptyNetwork, PolicyNet
 from fool_models.iep_utils import load_iep, inference_with_iep
 from fool_models.film_utils import load_film, load_resnet_backbone, inference_with_film
 from fool_models.stack_attention_utils import load_cnn_sa, inference_with_cnn_sa
@@ -37,6 +39,11 @@ sns.set_style('darkgrid')
 def _print(something):
     print(something, flush=True)
     return
+
+
+def accuracy_metric(y_pred, y_true):
+    acc = (y_pred.argmax(1) == y_true).float().detach().cpu().numpy()
+    return float(100 * acc.sum() / len(acc))
 
 
 AVAILABLE_DATASETS = {
@@ -94,17 +101,17 @@ def translate_state(example_state):
             "material": translation_tables['reverse_translation_material'][material]
         }
 
-    batch_size = example_state['types'].numpy().shape[0]
+    batch_size = example_state['types'].cpu().numpy().shape[0]
 
     for i in range(batch_size):
         template = header_template()
-        number_of_objects = np.where(example_state['types'][i].numpy() == 1)[0]
-        object_positions = example_state['object_positions'][i].numpy()[number_of_objects] * np.array(
+        number_of_objects = np.where(example_state['types'][i].cpu().numpy() == 1)[0]
+        object_positions = example_state['object_positions'][i].cpu().numpy()[number_of_objects] * np.array(
             [3, 3, 360])  # Don't forget that you have scaled them
-        object_colors = example_state['object_colors'][i].numpy()[number_of_objects]
-        object_shapes = example_state['object_shapes'][i].numpy()[number_of_objects]
-        object_materials = example_state['object_materials'][i].numpy()[number_of_objects]
-        object_sizes = example_state['object_sizes'][i].numpy()[number_of_objects]
+        object_colors = example_state['object_colors'][i].cpu().numpy()[number_of_objects]
+        object_shapes = example_state['object_shapes'][i].cpu().numpy()[number_of_objects]
+        object_materials = example_state['object_materials'][i].cpu().numpy()[number_of_objects]
+        object_sizes = example_state['object_sizes'][i].cpu().numpy()[number_of_objects]
         for p, c, s, m, z in zip(object_positions, object_colors, object_shapes, object_materials, object_sizes):
             template['objects'].append(object_template(p, c, s, m, z))
         grouped_templates.append(template)
@@ -415,6 +422,63 @@ def bird_eye_view(index, x, y, mode='before', q=None, a=None):
     plt.show()
     plt.close()
     return
+
+
+def get_defense_models(adversarial_agent_load_from=None,
+                       feature_extractor_load_from=None,
+                       vqa_model_load_type=None,
+                       batch_size=128,
+                       effective_range=None,
+                       randomize_range=False):
+    # Loading VQA Agent #
+    _print(f"Loading VQA Agent: {vqa_model_load_type}\n")
+    if vqa_model_load_type is None:
+        _print("No model is chosen...aborting")
+        return
+    elif vqa_model_load_type == 'film':
+        resnet = load_resnet_backbone()
+        vqa_agent = load_film()
+        output_shape = 224
+    elif vqa_model_load_type == 'rnfp':
+        resnet = None
+        vqa_agent = load_rnfp()
+        output_shape = 128
+    else:
+        raise NotImplementedError
+
+    device = 'cuda:0'
+    # Loading Mini Game #
+    val_set = MixCLEVR_HDF5(config=None, split='val',
+                            clvr_path='./data',
+                            questions_path='./data',
+                            scenes_path='./data',
+                            use_cache=False,
+                            return_program=True,
+                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range)
+
+    minigame = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                           num_workers=0, shuffle=False, drop_last=False)
+    _print(f"Minigame has : {len(minigame)} batches\n")
+
+    # Loading Feature Extractor #
+    experiment_name = feature_extractor_load_from.split('results/')[-1].split('/')[0]
+    config = f'./results/{experiment_name}/config.yaml'
+    with open(config, 'r') as fin:
+        config = yaml.load(fin, Loader=yaml.FullLoader)
+
+    feature_extractor = AVAILABLE_MODELS[config['model_architecture']](config)
+    _print(f"Loading Feature Extractor: {config['model_architecture']}\n")
+    feature_extractor = load(path=feature_extractor_load_from, model=feature_extractor)
+
+    feature_extractor = feature_extractor.to(device)
+    feature_extractor.eval()
+
+    # Loading Adversarial Agent #
+    _print("Loading Adversarial Agent...")
+    adversarial_agent = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+    adversarial_agent.load(adversarial_agent_load_from)
+
+    return adversarial_agent, feature_extractor, vqa_agent, resnet, minigame
 
 
 class ConfusionGame:
@@ -789,3 +853,480 @@ class ConfusionGame:
         invalid_scene_rewards = self.invalid_weight * not_rendered
         self.rewards = self.confusion_weight * confusion_rewards.numpy() + self.change_weight * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
         return self.rewards, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after
+
+
+class DefenseGame:
+    def __init__(self,
+                 vqa_model=None,
+                 adversarial_agent=None,
+                 feature_extractor_backbone=None,
+                 resnet=None,
+                 device='cuda',
+                 batch_size=5,
+                 defense_rounds=10,
+                 pipeline='extrapolation',
+                 mode='visual'
+                 ):
+        if feature_extractor_backbone is None:
+            raise ValueError('Feature Extractor Should be set to RN-State')
+        self.feature_extractor_backbone = feature_extractor_backbone
+        self.device = device
+        if batch_size > 32:
+            raise ResourceWarning(
+                f'You have selected Batch Size {batch_size}, this is a bit too much... but continue nevertheless\n')
+        self.batch_size = batch_size
+        if pipeline.lower() not in ['interpolation', 'extrapolation']:
+            raise NotImplementedError(
+                f'Pipeline can only be one of the following: [interpolate / extrapolate], you entered {pipeline}\n')
+        if isinstance(vqa_model, tuple):
+            raise NotImplementedError('Have not made this yet...\n')
+        self.vqa_model = vqa_model
+        self.vqa_model.to(self.device)
+        self.adversarial_agent_1 = adversarial_agent
+        self.adversarial_agent_1.to(self.device)
+        self.adversarial_agent_2 = None
+        self.defense_rounds = defense_rounds
+        self.oracle = Oracle(metadata_path='./metadata.json')
+        self.pipeline = pipeline
+        self.mode = mode
+        self.resnet = resnet
+        self.change_weight = 1
+        self.confusion_weight = 0.1
+        self.fail_weight = -0.1
+        self.invalid_weight = -0.8
+
+    def extract_features(self, iter_on_data):
+        """
+            Run a Batch Sized - Step in the Defense Game
+            iter_on_data: An iterator on a Minigame Dataset
+        """
+        with torch.no_grad():
+            data, y_real, programs = next(iter_on_data)
+            if self.mode != 'state':
+                data, image_data = data
+                image_data = kwarg_dict_to_device(image_data, self.device)
+                data = kwarg_dict_to_device(data, self.device)
+                _, _, features = self.feature_extractor_backbone(**data)
+            else:
+                data = kwarg_dict_to_device(data, self.device)
+                _, _, features = self.feature_extractor_backbone(**data)
+
+        return features, data, image_data, programs, y_real
+
+    # @staticmethod
+    def alter_object_positions_on_action(self, features, action_vector):
+        object_mask = features['types'][:, :10]
+        object_positions = features['object_positions']
+        if not isinstance(action_vector, np.ndarray):
+            av = action_vector.detach().to(self.device)
+        else:
+            av = torch.FloatTensor(action_vector).to(self.device)
+        # 10 first items are x perturbations #
+        # 10 next items are y perturbations #
+        x_change = av[:, :10] * object_mask
+        x_change = x_change.unsqueeze(-1)
+        y_change = av[:, 10:] * object_mask
+        y_change = y_change.unsqueeze(-1)
+        # Build it in BS X 3 format
+        z_change = torch.zeros_like(y_change)
+        change = torch.cat([x_change, y_change, z_change], dim=2)
+        object_positions += change
+        return object_positions.clip(-1.0, 1.0)
+
+    @staticmethod
+    def render_check(img_xs, img_ys, img_sizes, img_shapes):
+        directions = {'below': [-0.0, -0.0, -1.0],
+                      'front': [0.754490315914154, -0.6563112735748291, -0.0],
+                      'above': [0.0, 0.0, 1.0],
+                      'right': [0.6563112735748291, 0.7544902563095093, -0.0],
+                      'behind': [-0.754490315914154, 0.6563112735748291, 0.0],
+                      'left': [-0.6563112735748291, -0.7544902563095093, 0.0]}
+        positions = []
+        assert len(img_xs) == len(img_ys)
+        for i in range(len(img_xs)):
+            x = img_xs[i]
+            y = img_ys[i]
+            r = img_sizes[i]
+            if r == 0:
+                r = 0.7
+            else:
+                r = 0.3
+            s = img_shapes[i]
+            if s == 0:
+                r /= math.sqrt(2)
+            dists_good = True
+            margins_good = True
+            for (xx, yy, rr) in positions:
+                dx, dy = x - xx, y - yy
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist - r - rr < 0.25:
+                    dists_good = False
+                    break
+                for direction_name in ['left', 'right', 'front', 'behind']:
+                    direction_vec = directions[direction_name]
+                    assert direction_vec[2] == 0
+                    margin = dx * direction_vec[0] + dy * direction_vec[1]
+                    if 0 < margin < 0.4:
+                        margins_good = False
+                        break
+                if not margins_good:
+                    break
+
+            if not dists_good or not margins_good:
+                return False
+            positions.append((x, y, r))
+        return True
+
+    def state2img(self, state, bypass=False, custom_index=0, delete_every=True, retry=False):
+        wr = []
+        images_to_be_rendered = n_possible_images = state['positions'].size(0)
+        n_objects_per_image = state['types'][:, :10].sum(1).cpu().numpy()
+        key_light_jitter = fill_light_jitter = back_light_jitter = [0.5] * n_possible_images
+        if retry:
+            choices = [1, 0.5, 0.2, -0.2, -0.5, 0, -1]
+        else:
+            choices = [1]
+        for jitter in choices:
+            camera_jitter = [jitter] * n_possible_images
+            xs = []
+            ys = []
+            zs = []
+            colors = []
+            shapes = []
+            materials = []
+            sizes = []
+            questions = []
+            for image_idx in range(n_possible_images):
+                tmp_x = []
+                tmp_y = []
+                tmp_z = []
+                tmp_colors = []
+                tmp_shapes = []
+                tmp_materials = []
+                tmp_sizes = []
+                for object_idx in range(n_objects_per_image[image_idx]):
+                    tmp_x.append(state['object_positions'][image_idx, object_idx].cpu().numpy()[0] * 3)
+                    tmp_y.append(state['object_positions'][image_idx, object_idx].cpu().numpy()[1] * 3)
+                    tmp_z.append(state['object_positions'][image_idx, object_idx].cpu().numpy()[2] * 360)
+                    tmp_colors.append(state['object_colors'][image_idx, object_idx].cpu().item() - 1)
+                    tmp_shapes.append(state['object_shapes'][image_idx, object_idx].cpu().item() - 1)
+                    tmp_materials.append(state['object_materials'][image_idx, object_idx].cpu().item() - 1)
+                    tmp_sizes.append(state['object_sizes'][image_idx, object_idx].cpu().item() - 1)
+                if self.render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes) or bypass:
+                    xs.append(tmp_x)
+                    ys.append(tmp_y)
+                    zs.append(tmp_z)
+                    colors.append(tmp_colors)
+                    shapes.append(tmp_shapes)
+                    materials.append(tmp_materials)
+                    sizes.append(tmp_sizes)
+                    questions.append(state['question'][image_idx])
+                    wr.append(image_idx)
+                else:
+                    # print(f"Check Failed for index {custom_index}!")
+                    images_to_be_rendered -= 1
+
+            if delete_every:
+                for target in os.listdir('./neural_render/images'):
+                    if 'Rendered' in target:
+                        try:
+                            os.remove('./neural_render/images/' + target)
+                        except:
+                            pass
+            assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
+                                            back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
+                                            per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
+                                            per_image_colors=colors, per_image_sizes=sizes,
+                                            per_image_materials=materials,
+                                            num_images=images_to_be_rendered, split='Rendered', start_idx=custom_index,
+                                            workers=1)
+            final_images = []
+            final_questions = []
+            for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
+                is_rendered = pair[1]
+                if is_rendered:
+                    final_images.append(real_idx)
+                    final_questions.append(questions[fake_idx])
+
+            if retry:
+                if len(final_images) == 1:
+                    return final_images, final_questions
+                else:
+                    continue
+        return final_images, final_questions
+
+    def perpare_and_pass(self, vqa_model, resnet, questions, rendered_images):
+        if resnet is None:
+            img_size = (128, 128)
+        else:
+            img_size = (224, 224)
+        path = './neural_render/images'
+        images = [f'./neural_render/images/{f}' for f in os.listdir(path) if 'Rendered' in f and '.png' in f]
+        feat_list = []
+        if len(images) == 0:
+            return [-1] * self.batch_size
+        ### Read the images ###
+        for image in images:
+            img = imread(image)
+            img = rgba2rgb(img)
+            img = imresize(img, img_size)
+            img = img.astype('float32')
+            img = img.transpose(2, 0, 1)[None]
+            mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
+            std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
+            img = (img - mean) / std
+            img_var = torch.FloatTensor(img).to('cuda')
+            if resnet is not None:
+                ### Pass through Resnet ###
+                feat_list.append(resnet(img_var))
+            else:
+                feat_list.append(img_var)
+
+        ### Stack them with Questions ###
+        feats = torch.cat(feat_list, dim=0)
+        questions = torch.cat([f.unsqueeze(0) for f in questions], dim=0)
+        ### Pass through Model ###
+        questions = questions.to('cuda')
+        feats = feats.to('cuda')
+        if resnet is not None:
+            scores = vqa_model(questions, feats)
+        else:
+            scores, _, _ = vqa_model(**{'image': feats, 'question': questions})
+
+        _, preds = scores.data.cpu().max(1)
+        if resnet is not None:
+            preds = [f - 4 for f in preds]
+        else:
+            # RNFP Model / MDetr Model#
+            pass
+
+        send_back = np.ones(self.batch_size) * (-1)
+        k = 0
+        for i in range(self.batch_size):
+            if i in rendered_images:
+                send_back[i] = preds[k]
+                k += 1
+        return send_back, scores
+
+    def step(self, vqa_model, org_data, image_data, programs, action_vector, resnet=None):
+
+        predictions_after = []
+        with torch.no_grad():
+            vqa_model.eval()
+            predictions_before, _, _ = vqa_model(**image_data)
+            predictions_before = [f.item() for f in predictions_before.max(1)[1]]
+            vqa_model.train()
+
+        programs = translate_str_program(programs)
+        object_positions = self.alter_object_positions_on_action(org_data, action_vector)
+        org_data['object_positions'] = object_positions
+        scene = translate_state(org_data)
+        res = self.oracle(programs, scene, None)
+        res = translate_answer(res)
+        validity = res
+        state_after = org_data
+
+        # TODO: This is from the rendered stuff
+        rendered_images, questions = self.state2img(org_data)
+        scene = [f for f in scene]
+
+        predictions_after, softmax_predictions_after = self.perpare_and_pass(vqa_model, resnet, questions,
+                                                                             rendered_images)
+
+        return predictions_after, softmax_predictions_after, predictions_before, validity, scene, state_after
+
+    def get_rewards(self, vqa_model, org_data, image_data, programs, y_real, action_vector, resnet=None):
+        predictions_after, softmax_predictions_after, predictions_before, validity, scene, state_after = self.step(
+            vqa_model=vqa_model,
+            org_data=org_data,
+            image_data=image_data,
+            programs=programs,
+            action_vector=action_vector,
+            resnet=resnet)
+        pb = []
+        pa = []
+        not_rendered = []
+        for b, a in list(itertools.zip_longest(predictions_before, predictions_after[0])):
+            if b is not None:
+                if a == -1:
+                    pb.append(int(b))
+                    pa.append(int(b))
+                    not_rendered.append(1)
+                else:
+                    pb.append(int(b))
+                    pa.append(int(a))
+                    not_rendered.append(0)
+            else:
+                break
+        predictions_before, predictions_after = pb, pa
+        not_rendered = torch.LongTensor(not_rendered)
+
+        if isinstance(predictions_before, list):
+            predictions_before = torch.LongTensor(predictions_before)
+
+        if isinstance(predictions_after, list):
+            predictions_after = torch.LongTensor(predictions_after)
+        if self.batch_size == 1:
+            validity = [validity]
+        answer_stayed_the_same = y_real - torch.stack(validity, dim=0).long()
+        answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0).squeeze(1)
+        model_answered_correctly = y_real.squeeze(1) - predictions_before
+        model_answered_correctly = 1.0 * model_answered_correctly.eq(0)
+
+        confusion_rewards = (model_answered_correctly * answer_stayed_the_same * (
+                1.0 * (predictions_before != predictions_after)))
+
+        change_rewards = (answer_stayed_the_same * (1.0 * (predictions_before != predictions_after)))
+
+        fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
+        invalid_scene_rewards = self.invalid_weight * not_rendered
+        self.rewards = self.confusion_weight * confusion_rewards.numpy() + self.change_weight * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
+        return self.rewards, confusion_rewards, change_rewards, softmax_predictions_after
+
+    @staticmethod
+    def quantize(action, effect_range=(-0.3, 0.3), steps=6):
+        action = action.detach().cpu().numpy()
+        bs_, length_ = action.shape
+        quantized_actions = np.empty(action.shape)
+        for i in range(bs_):
+            for j in range(length_):
+                quantized_actions[i, j] = effect_range[0] + action[i, j] * ((effect_range[1] - effect_range[0]) / steps)
+        return quantized_actions
+
+    @staticmethod
+    def set_model_trainable(model, trainable):
+        if trainable:
+            model.train()
+        else:
+            model.eval()
+        return
+
+    def clone_adversarial_agent(self, random_weights=False):
+        if random_weights:
+            self.adversarial_agent_2 = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+        else:
+            # Bring to CPU #
+            self.adversarial_agent_1.to('cpu')
+            self.adversarial_agent_2 = copy.deepcopy(self.adversarial_agent_1)
+            # Get both on system device #
+            self.adversarial_agent_1.to(self.device)
+            self.adversarial_agent_2.to(self.device)
+
+    def interpolation_pipeline(self):
+        return
+
+    def engage(self, minigame, vqa_model=None, adversarial_agent=None, train_vqa=False, train_agent=False):
+        if vqa_model is None:
+            _print("[Warning] VQA Model in engage is None, assuming self.vqa_model.\n")
+            vqa_model = self.vqa_model
+            self.set_model_trainable(vqa_model, train_vqa)
+
+        if adversarial_agent is None:
+            _print("[Warning] Adversarial Agent is None, assuming self.adversarial_agent_2.\n")
+            if self.adversarial_agent_2 is None:
+                _print(
+                    "[Pipeline Error] Adversarial Agent 2 is empty... Make sure "
+                    "to load him or pass it as an argument\n Exiting...")
+                raise ValueError
+            adversarial_agent = self.adversarial_agent_2
+            self.set_model_trainable(adversarial_agent, train_agent)
+
+        if self.pipeline == 'extrapolation':
+            self.extrapolation_pipeline(minigame=minigame, vqa_model=vqa_model, adversarial_agent=adversarial_agent,
+                                        logger=None)
+        else:
+            raise NotImplementedError
+        return
+
+    def extrapolation_pipeline(self, minigame, vqa_model, adversarial_agent, logger=None, vqa_model_lr=1e-6,
+                               vqa_model_optim='AdamW'):
+        """
+            In this Scenario, The VQA Agent is Trainable, and we have 2 different adversarial agents that are NOT TRAINABLE
+            We fine-tune the VQA Agent on one ADVERSARIAL AGENT and test performance on 2nd.
+        """
+        criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction='sum')
+        metric = accuracy_metric
+        if vqa_model_optim == 'AdamW':
+            vqa_model_optimizer = optim.AdamW(
+                [{'params': vqa_model.parameters(), 'lr': vqa_model_lr,
+                  'weight_decay': 1e-4}
+                 ])
+        elif vqa_model_optim == 'SGD':
+            vqa_model_optimizer = optim.SGD(vqa_model.parameters(), lr=vqa_model_lr, momentum=0.9, weight_decay=1e-4)
+        else:
+            raise ValueError('Optimizers Supported are [AdamW / SGD]')
+
+        minigame_iter = iter(minigame)
+        accuracy_drop = []
+        confusion_drop = []
+        epochs_passed = 0
+        epoch_accuracy_drop = 0
+        epoch_confusion_drop = 0
+        epoch_accuracy_drop_history = []
+        epoch_confusion_drop_history = []
+
+        while epochs_passed < self.defense_rounds:
+            try:
+                features, org_data, image_data, programs, y_real = self.extract_features(minigame_iter)
+            except StopIteration:
+                del minigame_iter
+                minigame_iter = iter(minigame)
+                features, org_data, image_data, programs, y_real = self.extract_features(minigame_iter)
+
+                best_epoch_accuracy_drop = epoch_accuracy_drop / len(minigame)
+                best_epoch_confusion_drop = epoch_confusion_drop / len(minigame)
+                _print(
+                    f"Defense Game Extrapolation | Epoch {epochs_passed} | Epoch Accuracy"
+                    f" Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} % ")
+                if logger is not None:
+                    logger.log({'Epoch': epochs_passed,
+                                'Drop': best_epoch_accuracy_drop,
+                                'Consistency': best_epoch_confusion_drop})
+                epochs_passed += 1
+                epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(minigame))
+                epoch_confusion_drop_history.append(epoch_confusion_drop / len(minigame))
+                epoch_accuracy_drop = 0
+                epoch_confusion_drop = 0
+                # Here we should test on other game / other agent #
+
+            # Make Agent 2 Suggest Changes on Batch #
+            sx, sy, _ = adversarial_agent(features, None)
+            actionsx = torch.cat([f.unsqueeze(1) for f in sx], dim=1).max(2)[1]
+            actionsy = torch.cat([f.unsqueeze(1) for f in sy], dim=1).max(2)[1]
+            action = torch.cat([actionsx, actionsy], dim=1)
+            # Quantize Changes #
+            mixed_actions = self.quantize(action)
+            # Now is the important part, we need:
+            # - VQA Predictions Before in List Format
+            # - VQA Predictions After in List Format
+            # - VQA Predictions After in Softmax Format
+
+            _, confusion_rewards, change_rewards, vqa_predictions_softmax = self.get_rewards(
+                vqa_model=vqa_model, org_data=org_data, image_data=image_data, programs=programs, y_real=y_real,
+                action_vector=mixed_actions,
+                resnet=self.resnet)
+            # TODO: PERFORM BACKPROP HERE #
+            # In order not to overfit in this region, we will use the rewards as a mask of what to backprop #
+            # We need to backprop only the images that are incorrectly classified after the agent not the rest #
+            mask = torch.FloatTensor(confusion_rewards).to(self.device) + torch.FloatTensor(change_rewards).to(
+                self.device)
+
+            for i in range(self.batch_size):
+                loss = criterion(vqa_predictions_softmax[i, :], y_real.squeeze(1)[i, :])
+                loss *= mask[i]
+                loss.backward()
+
+            torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
+            vqa_model_optimizer.step()
+            vqa_model_optimizer.zero_grad()
+            batch_accuracy = 100 * (confusion_rewards.mean()).item()
+            batch_confusion = 100 * (change_rewards.mean()).item()
+            accuracy_drop.append(batch_accuracy)
+            confusion_drop.append(batch_confusion)
+            epoch_accuracy_drop += batch_accuracy
+            epoch_confusion_drop += batch_confusion
+
+        if logger is not None:
+            logger.log({'Epoch': epochs_passed, 'Drop': max(epoch_accuracy_drop_history),
+                        'Consistency': max(epoch_confusion_drop_history)})
+        return max(epoch_accuracy_drop_history), max(epoch_confusion_drop_history)
