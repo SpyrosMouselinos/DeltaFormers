@@ -430,7 +430,7 @@ class Re1nforceTrainer:
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
-        while batch_idx < self.training_duration:
+        while epochs_passed < self.training_duration:
             try:
                 features, org_data, _ = self.game.extract_features(self.dataloader_iter)
                 if self.predictions_before_pre_calc is not None:
@@ -517,10 +517,10 @@ class Re1nforceTrainer:
                 confusion_drop.append(batch_confusion)
                 epoch_accuracy_drop += batch_accuracy
                 epoch_confusion_drop += batch_confusion
-                if batch_idx % log_every == 0 and batch_idx > 0 and log_every != -1:
+                if epochs_passed % log_every == 0 and epochs_passed > 0 and log_every != -1:
                     _print(
                         f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
-                if batch_idx % save_every == 0 and batch_idx > 0:
+                if epochs_passed % save_every == 0 and epochs_passed > 0:
                     self.model.save(
                         f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
                 if patience == 0:
