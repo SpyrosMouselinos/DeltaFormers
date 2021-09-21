@@ -375,7 +375,7 @@ class Wizard:
 class Re1nforceTrainer:
     def __init__(self, model, game, dataloader, device='cuda', lr=0.001, train_duration=10, batch_size=32,
                  batch_tolerance=1, batch_reset=100, name='', predictions_before_pre_calc=None, resnet=None,
-                 fool_model_name=None):
+                 fool_model_name=None, initial_example=None):
         self.name = name
         self.model = model
         self.game = game
@@ -390,6 +390,7 @@ class Re1nforceTrainer:
         self.predictions_before_pre_calc = predictions_before_pre_calc
         self.resnet = resnet
         self.fool_model_name = fool_model_name
+        self.initial_example = initial_example
 
     def quantize(self, action, effect_range=(-0.3, 0.3), steps=6):
         action = action.detach().cpu().numpy()
@@ -458,10 +459,10 @@ class Re1nforceTrainer:
                     patience -= 1
 
                 if best_epoch_confusion_drop > limit:
-                    self.model.save(
-                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
-                    logger.session['rl_agent'].upload(
-                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_{round(best_epoch_confusion_drop, 1)}.pt')
+                    # self.model.save(
+                    #     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
+                    # logger.session['rl_agent'].upload(
+                    #     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
                     limit += 1
                 _print(
                     f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} % | Patience: {patience}")
@@ -529,9 +530,10 @@ class Re1nforceTrainer:
             except KeyboardInterrupt:
                 _print("Handling Graceful Exit...\n")
                 break
+        if self.initial_example is not None:
+            self.model.save(
+                f'./results/experiment_reinforce/visual/model_reinforce_{self.name}_{self.fool_model_name}_{self.initial_example}.pt')
 
-        self.model.save(
-            f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
 
         # fig1 = plt.figure(figsize=(10, 10))
         # plt.title(f'REINFORCE Epoch Consistency Drop on {self.fool_model_name}')

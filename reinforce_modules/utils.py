@@ -10,9 +10,9 @@ import numpy as np
 import torch.nn
 import yaml
 from torch import optim
-
+from utils.train_utils import SGD_GC
 from fool_models.mdter_utils import load_mdetr, inference_with_mdetr
-from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp
+from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp, load_loader as load_loader_rnfp
 from fool_models.tbd_utils import load_resnet_backbone as load_resnet_tbd_backbone
 from fool_models.tbd_utils import load_tbd, inference_with_tbh
 
@@ -261,7 +261,7 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
 def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                           use_cache=False, batch_size=128,
-                          use_hdf5=False, mode='state', effective_range=None, fool_model=None, randomize_range=False):
+                          use_hdf5=False, mode='state', effective_range=None, fool_model=None, randomize_range=False, range_offset=None):
     if fool_model is None:
         _print("No model is chosen...aborting")
         return
@@ -324,8 +324,8 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
                             scenes_path=scenes_path,
                             use_cache=use_cache,
                             return_program=True,
-                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range)
-
+                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range, effective_range_offset=range_offset)
+    initial_example = val_set.effective_range_offset
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
                                                  num_workers=0, shuffle=False, drop_last=False)
     _print(f"Loader has : {len(val_dataloader)} batches\n")
@@ -345,7 +345,7 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
     else:
         raise NotImplementedError
 
-    return model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc
+    return model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example
 
 
 def get_test_loader(load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/'):
@@ -429,6 +429,7 @@ def get_defense_models(adversarial_agent_load_from=None,
                        vqa_model_load_type=None,
                        batch_size=128,
                        effective_range=None,
+                       effective_range_offset=None,
                        randomize_range=False):
     # Loading VQA Agent #
     _print(f"Loading VQA Agent: {vqa_model_load_type}\n")
@@ -448,17 +449,37 @@ def get_defense_models(adversarial_agent_load_from=None,
 
     device = 'cuda:0'
     # Loading Mini Game #
-    val_set = MixCLEVR_HDF5(config=None, split='val',
-                            clvr_path='./data',
-                            questions_path='./data',
-                            scenes_path='./data',
-                            use_cache=False,
-                            return_program=True,
-                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range)
+    minigames = []
+    if isinstance(effective_range_offset, list):
+        for r in effective_range_offset:
+            val_set = MixCLEVR_HDF5(config=None, split='val',
+                                    clvr_path='./data',
+                                    questions_path='./data',
+                                    scenes_path='./data',
+                                    use_cache=False,
+                                    return_program=True,
+                                    effective_range=effective_range, output_shape=output_shape,
+                                    randomize_range=randomize_range, effective_range_offset=r)
 
-    minigame = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
-                                           num_workers=0, shuffle=False, drop_last=False)
-    _print(f"Minigame has : {len(minigame)} batches\n")
+            minigame = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                                   num_workers=0, shuffle=False, drop_last=False)
+            minigames.append(minigame)
+            _print(f"Minigame has : {len(minigame)} batches\n")
+    else:
+        val_set = MixCLEVR_HDF5(config=None, split='val',
+                                clvr_path='./data',
+                                questions_path='./data',
+                                scenes_path='./data',
+                                use_cache=False,
+                                return_program=True,
+                                effective_range=effective_range, output_shape=output_shape,
+                                randomize_range=randomize_range, effective_range_offset=effective_range_offset)
+
+        minigame = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                               num_workers=0, shuffle=False, drop_last=False)
+        minigames.append(minigame)
+        _print(f"Minigame has : {len(minigame)} batches\n")
+        minigames.append(None)
 
     # Loading Feature Extractor #
     experiment_name = feature_extractor_load_from.split('results/')[-1].split('/')[0]
@@ -475,10 +496,18 @@ def get_defense_models(adversarial_agent_load_from=None,
 
     # Loading Adversarial Agent #
     _print("Loading Adversarial Agent...")
-    adversarial_agent = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
-    adversarial_agent.load(adversarial_agent_load_from)
+    adversarial_agents = []
+    if isinstance(adversarial_agent_load_from, list):
+        for entry in adversarial_agent_load_from:
+            adversarial_agent = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+            adversarial_agent.load(entry)
+            adversarial_agents.append(adversarial_agent)
+    else:
+        adversarial_agent = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+        adversarial_agent.load(adversarial_agent_load_from)
+        adversarial_agents = [adversarial_agent, None]
 
-    return adversarial_agent, feature_extractor, vqa_agent, resnet, minigame
+    return adversarial_agents, feature_extractor, vqa_agent, resnet, minigames
 
 
 class ConfusionGame:
@@ -858,14 +887,17 @@ class ConfusionGame:
 class DefenseGame:
     def __init__(self,
                  vqa_model=None,
-                 adversarial_agent=None,
+                 adversarial_agent_1=None,
+                 adversarial_agent_2=None,
                  feature_extractor_backbone=None,
                  resnet=None,
                  device='cuda',
                  batch_size=5,
                  defense_rounds=10,
                  pipeline='extrapolation',
-                 mode='visual'
+                 mode='visual',
+                 train_range='0_10',
+                 train_name='rnfp'
                  ):
         if feature_extractor_backbone is None:
             raise ValueError('Feature Extractor Should be set to RN-State')
@@ -882,9 +914,11 @@ class DefenseGame:
             raise NotImplementedError('Have not made this yet...\n')
         self.vqa_model = vqa_model
         self.vqa_model.to(self.device)
-        self.adversarial_agent_1 = adversarial_agent
+        self.adversarial_agent_1 = adversarial_agent_1
         self.adversarial_agent_1.to(self.device)
-        self.adversarial_agent_2 = None
+        self.adversarial_agent_2 = adversarial_agent_2
+        if adversarial_agent_2 is not None:
+            self.adversarial_agent_2.to(self.device)
         self.defense_rounds = defense_rounds
         self.oracle = Oracle(metadata_path='./metadata.json')
         self.pipeline = pipeline
@@ -894,6 +928,25 @@ class DefenseGame:
         self.confusion_weight = 0.1
         self.fail_weight = -0.1
         self.invalid_weight = -0.8
+        self.skip_rendering = False
+        self.train_range = train_range
+        self.train_name = train_name
+
+    def save(self, model, range, path):
+        if os.path.exists('/'.join(path.split('/')[:-1])):
+            pass
+        else:
+            os.mkdir('/'.join(path.split('/')[:-1]))
+        torch.save({
+            'model_state_dict': model.state_dict(),
+        }, path + f'/defense_against_{range}.pt')
+        return
+
+    def stop_rendering(self):
+        self.skip_rendering = True
+
+    def start_rendering(self):
+        self.skip_rendering = False
 
     def extract_features(self, iter_on_data):
         """
@@ -913,7 +966,6 @@ class DefenseGame:
 
         return features, data, image_data, programs, y_real
 
-    # @staticmethod
     def alter_object_positions_on_action(self, features, action_vector):
         object_mask = features['types'][:, :10]
         object_positions = features['object_positions']
@@ -977,7 +1029,7 @@ class DefenseGame:
             positions.append((x, y, r))
         return True
 
-    def state2img(self, state, bypass=False, custom_index=0, delete_every=True, retry=False):
+    def state2img(self, state, bypass=False, custom_index=0, delete_every=True, retry=False, split='Rendered'):
         wr = []
         images_to_be_rendered = n_possible_images = state['positions'].size(0)
         n_objects_per_image = state['types'][:, :10].sum(1).cpu().numpy()
@@ -1033,19 +1085,20 @@ class DefenseGame:
                             os.remove('./neural_render/images/' + target)
                         except:
                             pass
+
             assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
                                             back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
                                             per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
                                             per_image_colors=colors, per_image_sizes=sizes,
                                             per_image_materials=materials,
-                                            num_images=images_to_be_rendered, split='Rendered', start_idx=custom_index,
+                                            num_images=images_to_be_rendered, split=split, start_idx=custom_index,
                                             workers=1)
             final_images = []
             final_questions = []
             for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
                 is_rendered = pair[1]
                 if is_rendered:
-                    final_images.append(real_idx)
+                    final_images.append(custom_index + real_idx)
                     final_questions.append(questions[fake_idx])
 
             if retry:
@@ -1055,16 +1108,32 @@ class DefenseGame:
                     continue
         return final_images, final_questions
 
-    def perpare_and_pass(self, vqa_model, resnet, questions, rendered_images):
+    def perpare_and_pass(self, vqa_model, resnet, questions, rendered_images, id_list=None, split='Rendered'):
+        def add_nulls2(int, cnt):
+            nulls = str(int)
+            for i in range(cnt - len(str(int))):
+                nulls = '0' + nulls
+            return nulls
+
         if resnet is None:
             img_size = (128, 128)
         else:
             img_size = (224, 224)
         path = './neural_render/images'
-        images = [f'./neural_render/images/{f}' for f in os.listdir(path) if 'Rendered' in f and '.png' in f]
+        images = [f'./neural_render/images/{f}' for f in os.listdir(path) if split in f and '.png' in f]
+        if id_list is None:
+            pass
+        else:
+            final_images = []
+            for image in images:
+                for id_code in id_list:
+                    id_code = add_nulls2(id_code, 6)
+                    if id_code in image:
+                        final_images.append(image)
+            images = final_images
         feat_list = []
         if len(images) == 0:
-            return [-1] * self.batch_size
+            return [-1] * self.batch_size, None
         ### Read the images ###
         for image in images:
             img = imread(image)
@@ -1108,14 +1177,12 @@ class DefenseGame:
                 k += 1
         return send_back, scores
 
-    def step(self, vqa_model, org_data, image_data, programs, action_vector, resnet=None):
+    def step(self, vqa_model, org_data, image_data, programs, action_vector, resnet=None, render=True, batch_idx=0,
+             split="Rendered"):
 
-        predictions_after = []
         with torch.no_grad():
-            vqa_model.eval()
             predictions_before, _, _ = vqa_model(**image_data)
             predictions_before = [f.item() for f in predictions_before.max(1)[1]]
-            vqa_model.train()
 
         programs = translate_str_program(programs)
         object_positions = self.alter_object_positions_on_action(org_data, action_vector)
@@ -1127,26 +1194,43 @@ class DefenseGame:
         state_after = org_data
 
         # TODO: This is from the rendered stuff
-        rendered_images, questions = self.state2img(org_data)
+        if render:
+            rendered_images, questions = self.state2img(org_data, delete_every=False,
+                                                        custom_index=batch_idx * self.batch_size, split=split)
+            if not hasattr(self, 'cached_rendered_images'):
+                self.cached_rendered_images = {}
+                self.cached_rendered_images.update({split: []})
+                self.cached_questions = {}
+                self.cached_questions.update({split: []})
+            if split not in self.cached_rendered_images.keys():
+                self.cached_rendered_images.update({split: []})
+                self.cached_questions.update({split: []})
+            self.cached_rendered_images[split].append(rendered_images)
+            self.cached_questions[split].append(questions)
+        else:
+            rendered_images = self.cached_rendered_images[split][batch_idx]
+            questions = self.cached_questions[split][batch_idx]
         scene = [f for f in scene]
 
         predictions_after, softmax_predictions_after = self.perpare_and_pass(vqa_model, resnet, questions,
-                                                                             rendered_images)
+                                                                             rendered_images, id_list=rendered_images,
+                                                                             split=split)
 
         return predictions_after, softmax_predictions_after, predictions_before, validity, scene, state_after
 
-    def get_rewards(self, vqa_model, org_data, image_data, programs, y_real, action_vector, resnet=None):
+    def get_rewards(self, vqa_model, org_data, image_data, programs, y_real, action_vector, resnet=None, render=True,
+                    batch_idx=0, split='Rendered'):
         predictions_after, softmax_predictions_after, predictions_before, validity, scene, state_after = self.step(
             vqa_model=vqa_model,
             org_data=org_data,
             image_data=image_data,
             programs=programs,
             action_vector=action_vector,
-            resnet=resnet)
+            resnet=resnet, render=render, batch_idx=batch_idx, split=split)
         pb = []
         pa = []
         not_rendered = []
-        for b, a in list(itertools.zip_longest(predictions_before, predictions_after[0])):
+        for b, a in list(itertools.zip_longest(predictions_before, predictions_after)):
             if b is not None:
                 if a == -1:
                     pb.append(int(b))
@@ -1194,9 +1278,18 @@ class DefenseGame:
         return quantized_actions
 
     @staticmethod
-    def set_model_trainable(model, trainable):
+    def set_model_trainable(model, trainable, but_list=None):
         if trainable:
-            model.train()
+            if but_list is None:
+                model.train()
+            else:
+                for name, param in model.named_parameters():
+                    for entry in but_list:
+                        if entry in name:
+                            param.requires_grad = True
+                            break
+                        else:
+                            param.requires_grad = False
         else:
             model.eval()
         return
@@ -1215,37 +1308,63 @@ class DefenseGame:
     def interpolation_pipeline(self):
         return
 
-    def engage(self, minigame, vqa_model=None, adversarial_agent=None, train_vqa=False, train_agent=False):
+    def engage(self, minigame, minigame2, vqa_model=None, adversarial_agent=None, adversarial_agent_eval=None,
+               train_vqa=False,
+               train_agent=False):
         if vqa_model is None:
             _print("[Warning] VQA Model in engage is None, assuming self.vqa_model.\n")
             vqa_model = self.vqa_model
-            self.set_model_trainable(vqa_model, train_vqa)
+            self.set_model_trainable(vqa_model, train_vqa, but_list=['fc2','fc3'])
 
         if adversarial_agent is None:
-            _print("[Warning] Adversarial Agent is None, assuming self.adversarial_agent_2.\n")
+            _print("[Warning] Adversarial Agent is None, assuming self.adversarial_agent_1.\n")
+            if self.adversarial_agent_1 is None:
+                _print(
+                    "[Pipeline Error] Adversarial Agent 1 is empty... Make sure "
+                    "to load him or pass it as an argument\n Exiting...")
+                raise ValueError
+            adversarial_agent = self.adversarial_agent_1
+            self.set_model_trainable(adversarial_agent, train_agent)
+
+        if adversarial_agent_eval is None:
+            _print("[Warning] Adversarial Agent EVAL is None, assuming self.adversarial_agent_2.\n")
             if self.adversarial_agent_2 is None:
                 _print(
                     "[Pipeline Error] Adversarial Agent 2 is empty... Make sure "
                     "to load him or pass it as an argument\n Exiting...")
                 raise ValueError
-            adversarial_agent = self.adversarial_agent_2
-            self.set_model_trainable(adversarial_agent, train_agent)
+            adversarial_agent_eval = self.adversarial_agent_2
+            self.set_model_trainable(adversarial_agent_eval, False)
 
         if self.pipeline == 'extrapolation':
-            self.extrapolation_pipeline(minigame=minigame, vqa_model=vqa_model, adversarial_agent=adversarial_agent,
+            self.extrapolation_pipeline(minigame=minigame, minigame2=minigame2, vqa_model=vqa_model,
+                                        adversarial_agent=adversarial_agent,
+                                        adversarial_agent_eval=adversarial_agent_eval,
                                         logger=None)
         else:
             raise NotImplementedError
         return
 
-    def extrapolation_pipeline(self, minigame, vqa_model, adversarial_agent, logger=None, vqa_model_lr=1e-6,
+    def extrapolation_pipeline(self, minigame, minigame2, vqa_model, adversarial_agent, adversarial_agent_eval,
+                               logger=None,
+                               vqa_model_lr=1e-4,
                                vqa_model_optim='AdamW'):
         """
             In this Scenario, The VQA Agent is Trainable, and we have 2 different adversarial agents that are NOT TRAINABLE
             We fine-tune the VQA Agent on one ADVERSARIAL AGENT and test performance on 2nd.
+            AdamW 1e-4 Solved 86.57
+            AdamW 5e-4 Solved 86.63
+            SGD_GC 1e-4 / 0.9 Solved 66.0
+            AdamW 1e-5 Solved 86.63
+            SGD_GC 1e-5 / 0.9 Solved 78.5
+            AdamW 8e-6 Solved 86.63
+            AdamW 5e-6 Not Solved 86.85
+            AdamW 1e-6 Not Solved 87.04
+            SGD_GC 1e-6 / 0.75 Solved 85.1
+            Org 87.05
         """
+        RENDER_FLAG = True
         criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction='sum')
-        metric = accuracy_metric
         if vqa_model_optim == 'AdamW':
             vqa_model_optimizer = optim.AdamW(
                 [{'params': vqa_model.parameters(), 'lr': vqa_model_lr,
@@ -1253,12 +1372,15 @@ class DefenseGame:
                  ])
         elif vqa_model_optim == 'SGD':
             vqa_model_optimizer = optim.SGD(vqa_model.parameters(), lr=vqa_model_lr, momentum=0.9, weight_decay=1e-4)
+        elif vqa_model_optim == 'SGD_GC':
+            vqa_model_optimizer = SGD_GC(params=vqa_model.parameters(), lr=vqa_model_lr, momentum=0.9, weight_decay=1e-4)
         else:
-            raise ValueError('Optimizers Supported are [AdamW / SGD]')
+            raise ValueError('Optimizers Supported are [AdamW / SGD / SGD_GC]')
 
         minigame_iter = iter(minigame)
         accuracy_drop = []
         confusion_drop = []
+        current_batch_idx = 0
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
@@ -1282,12 +1404,20 @@ class DefenseGame:
                     logger.log({'Epoch': epochs_passed,
                                 'Drop': best_epoch_accuracy_drop,
                                 'Consistency': best_epoch_confusion_drop})
-                epochs_passed += 1
+
                 epoch_accuracy_drop_history.append(epoch_accuracy_drop / len(minigame))
                 epoch_confusion_drop_history.append(epoch_confusion_drop / len(minigame))
+                if best_epoch_accuracy_drop == 0:
+                    break
                 epoch_accuracy_drop = 0
                 epoch_confusion_drop = 0
+                current_batch_idx = 0
                 # Here we should test on other game / other agent #
+                if epochs_passed % 5 == 0:
+                    self.evaluate(epoch=epochs_passed, minigame=minigame2, vqa_model=vqa_model,
+                                 adversarial_agent_eval=adversarial_agent_eval, render_flag=RENDER_FLAG)
+                RENDER_FLAG = False
+                epochs_passed += 1
 
             # Make Agent 2 Suggest Changes on Batch #
             sx, sy, _ = adversarial_agent(features, None)
@@ -1304,29 +1434,97 @@ class DefenseGame:
             _, confusion_rewards, change_rewards, vqa_predictions_softmax = self.get_rewards(
                 vqa_model=vqa_model, org_data=org_data, image_data=image_data, programs=programs, y_real=y_real,
                 action_vector=mixed_actions,
-                resnet=self.resnet)
-            # TODO: PERFORM BACKPROP HERE #
+                resnet=self.resnet, render=RENDER_FLAG, batch_idx=current_batch_idx)
             # In order not to overfit in this region, we will use the rewards as a mask of what to backprop #
             # We need to backprop only the images that are incorrectly classified after the agent not the rest #
-            mask = torch.FloatTensor(confusion_rewards).to(self.device) + torch.FloatTensor(change_rewards).to(
-                self.device)
+            mask = torch.FloatTensor(confusion_rewards).to(self.device)
+            if vqa_predictions_softmax is not None:
+                y_real = y_real.to('cuda')
+                loss = 0
+                for i in range(self.batch_size):
+                    loss = loss + criterion(vqa_predictions_softmax[i, :].unsqueeze(0), y_real[i, :]) * mask[i]
 
-            for i in range(self.batch_size):
-                loss = criterion(vqa_predictions_softmax[i, :], y_real.squeeze(1)[i, :])
-                loss *= mask[i]
                 loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
-            vqa_model_optimizer.step()
-            vqa_model_optimizer.zero_grad()
+                torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
+                vqa_model_optimizer.step()
+                vqa_model_optimizer.zero_grad()
+            else:
+                _print("Nothing was Rendered!")
+
             batch_accuracy = 100 * (confusion_rewards.mean()).item()
             batch_confusion = 100 * (change_rewards.mean()).item()
             accuracy_drop.append(batch_accuracy)
             confusion_drop.append(batch_confusion)
             epoch_accuracy_drop += batch_accuracy
             epoch_confusion_drop += batch_confusion
+            current_batch_idx += 1
 
         if logger is not None:
             logger.log({'Epoch': epochs_passed, 'Drop': max(epoch_accuracy_drop_history),
                         'Consistency': max(epoch_confusion_drop_history)})
+        self.save(model=vqa_model, range=self.train_range,
+                  path=f'./results/experiment_defense/visual/{self.train_name}')
+        self.evaluate(epoch=epochs_passed, minigame=minigame2, vqa_model=vqa_model,
+                      adversarial_agent_eval=adversarial_agent_eval, render_flag=RENDER_FLAG)
         return max(epoch_accuracy_drop_history), max(epoch_confusion_drop_history)
+
+    def evaluate(self, epoch, minigame, vqa_model, adversarial_agent_eval, render_flag=True):
+        current_batch_idx = 0
+        minigame_iter = iter(minigame)
+        accuracy_drop = []
+        confusion_drop = []
+        epoch_accuracy_drop = 0
+        epoch_confusion_drop = 0
+
+        while True:
+            try:
+                features, org_data, image_data, programs, y_real = self.extract_features(minigame_iter)
+            except StopIteration:
+                del minigame_iter
+
+                best_epoch_accuracy_drop = epoch_accuracy_drop / len(minigame)
+                best_epoch_confusion_drop = epoch_confusion_drop / len(minigame)
+                _print(
+                    f"Defense Game Extrapolation Evaluation Round | Epoch {epoch} | Epoch Accuracy"
+                    f" Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} % ")
+                return best_epoch_accuracy_drop, best_epoch_confusion_drop
+
+            sx, sy, _ = adversarial_agent_eval(features, None)
+            actionsx = torch.cat([f.unsqueeze(1) for f in sx], dim=1).max(2)[1]
+            actionsy = torch.cat([f.unsqueeze(1) for f in sy], dim=1).max(2)[1]
+            action = torch.cat([actionsx, actionsy], dim=1)
+            mixed_actions = self.quantize(action)
+            _, confusion_rewards, change_rewards, vqa_predictions_softmax = self.get_rewards(
+                vqa_model=vqa_model, org_data=org_data, image_data=image_data, programs=programs, y_real=y_real,
+                action_vector=mixed_actions,
+                resnet=self.resnet, render=render_flag, batch_idx=current_batch_idx, split='Evaluation')
+
+            batch_accuracy = 100 * (confusion_rewards.mean()).item()
+            batch_confusion = 100 * (change_rewards.mean()).item()
+            accuracy_drop.append(batch_accuracy)
+            confusion_drop.append(batch_confusion)
+            epoch_accuracy_drop += batch_accuracy
+            epoch_confusion_drop += batch_confusion
+            current_batch_idx += 1
+
+    def assess_overall_drop(self, train_name, train_range):
+        if train_name is None:
+            _print('Train Name is Empty... Loading self.train_name of Defense Game\n')
+            train_name = self.train_name
+
+        if train_range is None:
+            _print('Train Range is Empty... Loading self.train_range of Defense Game\n')
+            train_range = self.train_range
+
+        path = f'./results/experiment_defense/visual/{train_name}/defense_against_{train_range}.pt'
+        if train_name == 'rnfp':
+            model = load_rnfp(path)
+            loader = load_loader_rnfp()
+            results = inference_with_rnfp(loader=loader, model=model, resnet_extractor=None, evaluator=True)
+
+        else:
+            raise NotImplementedError(f'Assess overall drop expects input rnfp, you entered: {train_name}')
+
+
+        return results

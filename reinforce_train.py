@@ -56,9 +56,14 @@ def PolicyEvaluation(args, seed=1, logger=None):
                                                            randomize_range=eval(args.randomize_range))
         predictions_before_pre_calc = None
         resnet = None
+        initial_example = None
 
     else:
-        model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc = get_visual_fool_model(
+        if args.range_offset is not None:
+            range_offset = int(args.range_offset)
+        else:
+            range_offset = None
+        model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example = get_visual_fool_model(
             device=args.device,
             load_from=args.load_from,
             scenes_path=args.scenes_path,
@@ -69,7 +74,7 @@ def PolicyEvaluation(args, seed=1, logger=None):
             batch_size=BS,
             mode=args.mode,
             effective_range=effective_range,
-            fool_model=args.fool_model, randomize_range=eval(args.randomize_range))
+            fool_model=args.fool_model, randomize_range=eval(args.randomize_range), range_offset=range_offset)
 
     train_duration = args.train_duration
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
@@ -84,7 +89,7 @@ def PolicyEvaluation(args, seed=1, logger=None):
         raise ValueError
     if args.cont > 0:
         print("Loading model...")
-        model.load(f'./results/experiment_reinforce/visual/model_reinforce_iep_{effective_range_name}.pt')
+        model.load(f'./results/experiment_reinforce/visual/model_reinforce_0.01k_rnfp.pt')
 
     if args.mode == 'visual':
         fool_model_name = args.fool_model
@@ -93,10 +98,10 @@ def PolicyEvaluation(args, seed=1, logger=None):
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=val_dataloader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
                                predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet,
-                               fool_model_name=fool_model_name)
+                               fool_model_name=fool_model_name, initial_example=initial_example)
 
-    best_drop, best_confusion = trainer.train(log_every=-1, save_every=10, logger=logger)
-    # trainer.evaluate(example_range=(0, 100))
+    best_drop, best_confusion = trainer.train(log_every=-1, save_every=100, logger=logger)
+    #trainer.evaluate(example_range=(0, 100))
     return best_drop, best_confusion
 
 
@@ -114,7 +119,7 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=30)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=50)
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=5)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
@@ -123,6 +128,7 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--randomize_range', type=str, default='False')
+    parser.add_argument('--range_offset', type=int, default=0)
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
@@ -134,7 +140,7 @@ if __name__ == '__main__':
     if args.repeat == 1:
         _print(f'Final Results on {args.fool_model}:')
         # TODO: DELETE THIS
-        logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, 1], dummy=False)
+        logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, 1], dummy=True)
 
         _print(PolicyEvaluation(args, args.seed, logger=logger))
     else:

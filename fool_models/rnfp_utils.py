@@ -67,12 +67,15 @@ def kwarg_dict_to_device(data_obj, device):
         cpy[key] = data_obj[key].to(device)
     return cpy
 
-def load_rnfp():
+def load_rnfp(model_path=None):
     config = f'{UP_TO_HERE_}/results/experiment_fp/config.yaml'
     with open(config, 'r') as fin:
         config = yaml.load(fin, Loader=yaml.FullLoader)
     model = DeltaRNFP(config)
-    model = load(path=f'{UP_TO_HERE_}/results/experiment_fp/mos_epoch_219.pt', model=model)
+    if model_path is None:
+        model = load(path=f'{UP_TO_HERE_}/results/experiment_fp/mos_epoch_219.pt', model=model)
+    else:
+        model = load(path=model_path, model=model)
     model.to('cuda')
     model.eval()
     return model
@@ -80,14 +83,14 @@ def load_rnfp():
 
 def load_loader():
     val_set = ImageCLEVR_HDF5(config=None, split='val',
-                              clvr_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
-                              questions_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
-                              scenes_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
+                              clvr_path=f'{UP_TO_HERE_}/data',
+                              questions_path=f'{UP_TO_HERE_}/data',
+                              scenes_path=f'{UP_TO_HERE_}/data',
                               use_cache=False,
                               return_program=False,
-                              effective_range=1000, output_shape=128)
+                              effective_range=None, output_shape=128)
 
-    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=2,
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=20,
                                                  num_workers=0, shuffle=False, drop_last=False)
     return val_dataloader
 
@@ -96,15 +99,18 @@ def load_resnet_backbone():
     raise ValueError("Not required in RNFP!\n")
 
 
-def inference_with_rnfp(loader=None, model=None, resnet_extractor=None):
+def inference_with_rnfp(loader=None, model=None, resnet_extractor=None, evaluator=False):
     model.eval()
     num_correct, num_samples = 0, 0
     final_preds = []
     print(f"Testing for {len(loader)} samples")
     print()
     for batch in loader:
-        (_, iq), answer, _ = batch
-        #iq, answer = batch
+        if evaluator:
+            iq, answer = batch
+        else:
+            (_, iq), answer, _ = batch
+
         iq = kwarg_dict_to_device(iq, 'cuda')
         scores, _ , _ = model(**iq)
 

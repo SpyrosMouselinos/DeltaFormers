@@ -16,6 +16,8 @@ import torch
 import yaml
 from torch.utils.data import Dataset
 from natsort import natsorted
+import torch
+from torch.optim.optimizer import Optimizer
 
 
 def _print(something):
@@ -466,7 +468,8 @@ class ImageCLEVR_HDF5(Dataset):
 
 class MixCLEVR_HDF5(Dataset):
     def __init__(self, config=None, split='val', scenes_path='data/', clvr_path='data/', questions_path='data/',
-                 use_cache=False, return_program=False, effective_range=None, output_shape=None, randomize_range=False):
+                 use_cache=False, return_program=False, effective_range=None, output_shape=None, randomize_range=False,
+                 effective_range_offset=0):
         if randomize_range:
             if effective_range is not None:
                 effective_range_offset = random.randint(0, 140_000 - effective_range)
@@ -474,8 +477,9 @@ class MixCLEVR_HDF5(Dataset):
             else:
                 effective_range_offset = 0
         else:
-            effective_range_offset = 0
+            effective_range_offset = effective_range_offset
         print(f"Effective Range Offset: {effective_range_offset}", flush=True)
+        self.effective_range_offset = effective_range_offset
         self.return_program = return_program
         self.split = split
         self.clvr_path = clvr_path
@@ -585,3 +589,70 @@ class ImageCLEVR(Dataset):
         answer = self.y[idx]
 
         return {'image': image, 'question': question}, answer
+
+
+class SGD_GC(Optimizer):
+
+    def __init__(self, params, lr, momentum=0, dampening=0,
+                 weight_decay=0, nesterov=False):
+        if lr < 0.0:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if momentum < 0.0:
+            raise ValueError("Invalid momentum value: {}".format(momentum))
+        if weight_decay < 0.0:
+            raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
+
+        defaults = dict(lr=lr, momentum=momentum, dampening=dampening,
+                        weight_decay=weight_decay, nesterov=nesterov)
+        if nesterov and (momentum <= 0 or dampening != 0):
+            raise ValueError("Nesterov momentum requires a momentum and zero dampening")
+        super(SGD_GC, self).__init__(params, defaults)
+
+    def __setstate__(self, state):
+        super(SGD_GC, self).__setstate__(state)
+        for group in self.param_groups:
+            group.setdefault('nesterov', False)
+
+    def step(self, closure=None):
+        """Performs a single optimization step.
+        Arguments:
+            closure (callable, optional): A closure that reevaluates the model
+                and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        for group in self.param_groups:
+            weight_decay = group['weight_decay']
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                d_p = p.grad.data
+
+                if weight_decay != 0:
+                    d_p.add_(weight_decay, p.data)
+
+                #GC operation for Conv layers and FC layers
+                if len(list(d_p.size()))>1:
+                   d_p.add_(-d_p.mean(dim = tuple(range(1,len(list(d_p.size())))), keepdim = True))
+
+                if momentum != 0:
+                    param_state = self.state[p]
+                    if 'momentum_buffer' not in param_state:
+                        buf = param_state['momentum_buffer'] = torch.clone(d_p).detach()
+                    else:
+                        buf = param_state['momentum_buffer']
+                        buf.mul_(momentum).add_(1 - dampening, d_p)
+                    if nesterov:
+                        d_p = d_p.add(momentum, buf)
+                    else:
+                        d_p = buf
+
+                p.data.add_(-group['lr'], d_p)
+
+        return loss
