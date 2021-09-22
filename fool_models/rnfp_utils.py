@@ -90,7 +90,7 @@ def load_loader():
                               return_program=False,
                               effective_range=None, output_shape=128)
 
-    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=20,
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=10,
                                                  num_workers=0, shuffle=False, drop_last=False)
     return val_dataloader
 
@@ -127,6 +127,6 @@ def inference_with_rnfp(loader=None, model=None, resnet_extractor=None, evaluato
     return final_preds
 
 
-# model = load_rnfp()
-# loader = load_loader()
-# inference_with_rnfp(loader=loader, model=model, resnet_extractor=None)
+#model = load_rnfp()
+#loader = load_loader()
+#inference_with_rnfp(loader=None, model=model, resnet_extractor=None)

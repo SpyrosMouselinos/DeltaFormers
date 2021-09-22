@@ -40,9 +40,15 @@ def DefenseEvaluation(args, seed=1, logger=None):
     defense_rounds = args.defense_rounds
     adversarial_agent_load_from_1 = args.aalf1
     adversarial_agent_load_from_2 = args.aalf2
-    effective_range = args.range * 1000
+    effective_range_1 = args.range_1 * 1000
+    effective_range_2 = args.range_2 * 1000
+    if effective_range_2 is None:
+        effective_range = effective_range_1
+    else:
+        effective_range = [effective_range_1, effective_range_2]
     effective_range_1_offset = args.range_1_offset
     effective_range_2_offset = args.range_2_offset
+
     if effective_range_2_offset is None:
         effective_range_offset = effective_range_1_offset
     else:
@@ -65,7 +71,7 @@ def DefenseEvaluation(args, seed=1, logger=None):
         effective_range_offset=effective_range_offset,
         randomize_range=False)
 
-    train_range = f'{args.range_1_offset}_{args.range_1_offset + args.range * 1000}'
+    train_range = f'{args.range_1_offset}_{args.range_1_offset + args.range_1 * 1000}'
     train_name = args.vmlt
     defense_game = DefenseGame(vqa_model=vqa_agent,
                                adversarial_agent_1=adversarial_agent[0],
@@ -90,16 +96,17 @@ if __name__ == '__main__':
     parser.add_argument('--bs', type=int, help='Batch Size', default=5)
     parser.add_argument('--defense_rounds', type=int, help='Rounds / Epochs of Defense', default=1000)
     parser.add_argument('--aalf1', type=str, help='Adversarial Agent Load From 1',
-                        default='./results/experiment_reinforce/visual/model_reinforce_0.01k_rnfp_0.pt')
+                        default='./results/experiment_reinforce/visual/model_reinforce_0.1k_rnfp_0.pt')
     parser.add_argument('--aalf2', type=str, help='Adversarial Agent Load From 2',
-                        default='./results/experiment_reinforce/visual/model_reinforce_0.01k_rnfp_100.pt')
+                        default='./results/experiment_reinforce/visual/model_reinforce_0.1k_rnfp_100.pt')
     parser.add_argument('--felf', type=str, help='Feature Extractor Load From',
                         default='./results/experiment_rn/mos_epoch_164.pt')
     parser.add_argument('--vmlt', type=str, help='VQA Load Type', default='rnfp')
 
     parser.add_argument('--range_1_offset', type=float, default=0)
     parser.add_argument('--range_2_offset', type=float, default=100)
-    parser.add_argument('--range', type=float, default=0.01)
+    parser.add_argument('--range_1', type=float, default=0.1)
+    parser.add_argument('--range_2', type=float, default=0.1)
     parser.add_argument('--randomize_range', type=str, default='False')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--repeat', type=int, default=1)

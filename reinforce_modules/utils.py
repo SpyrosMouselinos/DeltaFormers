@@ -261,7 +261,8 @@ def get_fool_model(device, load_from=None, clvr_path='data/', questions_path='da
 
 def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/',
                           use_cache=False, batch_size=128,
-                          use_hdf5=False, mode='state', effective_range=None, fool_model=None, randomize_range=False, range_offset=None):
+                          use_hdf5=False, mode='state', effective_range=None, fool_model=None, randomize_range=False,
+                          range_offset=None):
     if fool_model is None:
         _print("No model is chosen...aborting")
         return
@@ -324,7 +325,8 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
                             scenes_path=scenes_path,
                             use_cache=use_cache,
                             return_program=True,
-                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range, effective_range_offset=range_offset)
+                            effective_range=effective_range, output_shape=output_shape, randomize_range=randomize_range,
+                            effective_range_offset=range_offset)
     initial_example = val_set.effective_range_offset
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
                                                  num_workers=0, shuffle=False, drop_last=False)
@@ -450,15 +452,19 @@ def get_defense_models(adversarial_agent_load_from=None,
     device = 'cuda:0'
     # Loading Mini Game #
     minigames = []
+    if isinstance(effective_range, list):
+        assert len(effective_range) == len(effective_range_offset)
+    else:
+        effective_range = [effective_range] * len(effective_range_offset)
     if isinstance(effective_range_offset, list):
-        for r in effective_range_offset:
+        for i, r in enumerate(effective_range_offset):
             val_set = MixCLEVR_HDF5(config=None, split='val',
                                     clvr_path='./data',
                                     questions_path='./data',
                                     scenes_path='./data',
                                     use_cache=False,
                                     return_program=True,
-                                    effective_range=effective_range, output_shape=output_shape,
+                                    effective_range=effective_range[i], output_shape=output_shape,
                                     randomize_range=randomize_range, effective_range_offset=r)
 
             minigame = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
@@ -1095,20 +1101,22 @@ class DefenseGame:
                                             workers=1)
             final_images = []
             final_questions = []
+            final_patched_images = []
             for fake_idx, (pair, real_idx) in enumerate(zip(assembled_images, wr)):
                 is_rendered = pair[1]
                 if is_rendered:
-                    final_images.append(custom_index + real_idx)
+                    final_images.append(custom_index + fake_idx)
                     final_questions.append(questions[fake_idx])
+                    final_patched_images.append(real_idx)
 
             if retry:
                 if len(final_images) == 1:
                     return final_images, final_questions
                 else:
                     continue
-        return final_images, final_questions
+        return final_images, final_questions, final_patched_images
 
-    def perpare_and_pass(self, vqa_model, resnet, questions, rendered_images, id_list=None, split='Rendered'):
+    def perpare_and_pass(self, vqa_model, resnet, questions, rendered_images=None, id_list=None, split='Rendered'):
         def add_nulls2(int, cnt):
             nulls = str(int)
             for i in range(cnt - len(str(int))):
@@ -1121,12 +1129,12 @@ class DefenseGame:
             img_size = (224, 224)
         path = './neural_render/images'
         images = [f'./neural_render/images/{f}' for f in os.listdir(path) if split in f and '.png' in f]
-        if id_list is None:
-            pass
+        if rendered_images is None:
+            images = []
         else:
             final_images = []
             for image in images:
-                for id_code in id_list:
+                for id_code in rendered_images:
                     id_code = add_nulls2(id_code, 6)
                     if id_code in image:
                         final_images.append(image)
@@ -1172,7 +1180,7 @@ class DefenseGame:
         send_back = np.ones(self.batch_size) * (-1)
         k = 0
         for i in range(self.batch_size):
-            if i in rendered_images:
+            if i in id_list:
                 send_back[i] = preds[k]
                 k += 1
         return send_back, scores
@@ -1195,25 +1203,32 @@ class DefenseGame:
 
         # TODO: This is from the rendered stuff
         if render:
-            rendered_images, questions = self.state2img(org_data, delete_every=False,
-                                                        custom_index=batch_idx * self.batch_size, split=split)
+            rendered_images, questions, patched_images = self.state2img(org_data, delete_every=False,
+                                                                        custom_index=batch_idx * self.batch_size,
+                                                                        split=split)
             if not hasattr(self, 'cached_rendered_images'):
                 self.cached_rendered_images = {}
                 self.cached_rendered_images.update({split: []})
                 self.cached_questions = {}
                 self.cached_questions.update({split: []})
+                self.cached_patch_images = {}
+                self.cached_patch_images.update({split: []})
             if split not in self.cached_rendered_images.keys():
                 self.cached_rendered_images.update({split: []})
                 self.cached_questions.update({split: []})
+                self.cached_patch_images.update({split: []})
             self.cached_rendered_images[split].append(rendered_images)
             self.cached_questions[split].append(questions)
+            self.cached_patch_images[split].append(patched_images)
         else:
             rendered_images = self.cached_rendered_images[split][batch_idx]
             questions = self.cached_questions[split][batch_idx]
-        scene = [f for f in scene]
+            patched_images = self.cached_patch_images[split][batch_idx]
+        scene = [f for i, f in enumerate(scene) if i in patched_images]
 
         predictions_after, softmax_predictions_after = self.perpare_and_pass(vqa_model, resnet, questions,
-                                                                             rendered_images, id_list=rendered_images,
+                                                                             rendered_images=rendered_images,
+                                                                             id_list=patched_images,
                                                                              split=split)
 
         return predictions_after, softmax_predictions_after, predictions_before, validity, scene, state_after
@@ -1265,7 +1280,7 @@ class DefenseGame:
         fail_rewards = self.fail_weight * torch.ones_like(change_rewards)
         invalid_scene_rewards = self.invalid_weight * not_rendered
         self.rewards = self.confusion_weight * confusion_rewards.numpy() + self.change_weight * change_rewards.numpy() + fail_rewards.numpy() + invalid_scene_rewards.numpy()
-        return self.rewards, confusion_rewards, change_rewards, softmax_predictions_after
+        return self.rewards, confusion_rewards, change_rewards, softmax_predictions_after, not_rendered
 
     @staticmethod
     def quantize(action, effect_range=(-0.3, 0.3), steps=6):
@@ -1279,6 +1294,7 @@ class DefenseGame:
 
     @staticmethod
     def set_model_trainable(model, trainable, but_list=None):
+
         if trainable:
             if but_list is None:
                 model.train()
@@ -1290,6 +1306,8 @@ class DefenseGame:
                             break
                         else:
                             param.requires_grad = False
+                if 'lstm' in but_list:
+                    model.seq.train()
         else:
             model.eval()
         return
@@ -1314,7 +1332,8 @@ class DefenseGame:
         if vqa_model is None:
             _print("[Warning] VQA Model in engage is None, assuming self.vqa_model.\n")
             vqa_model = self.vqa_model
-            self.set_model_trainable(vqa_model, train_vqa, but_list=['fc2','fc3'])
+            self.set_model_trainable(vqa_model, train_vqa,
+                                     but_list=['lstm', 'conv3', 'conv4', 'g_layers', 'fc3', 'fc2', 'fc1'])
 
         if adversarial_agent is None:
             _print("[Warning] Adversarial Agent is None, assuming self.adversarial_agent_1.\n")
@@ -1347,15 +1366,17 @@ class DefenseGame:
 
     def extrapolation_pipeline(self, minigame, minigame2, vqa_model, adversarial_agent, adversarial_agent_eval,
                                logger=None,
-                               vqa_model_lr=1e-4,
+                               vqa_model_lr=1e-6,
                                vqa_model_optim='AdamW'):
         """
             In this Scenario, The VQA Agent is Trainable, and we have 2 different adversarial agents that are NOT TRAINABLE
             We fine-tune the VQA Agent on one ADVERSARIAL AGENT and test performance on 2nd.
             AdamW 1e-4 Solved 86.57
-            AdamW 5e-4 Solved 86.63
+            AdamW 5e-5 Solved 86.63
             SGD_GC 1e-4 / 0.9 Solved 66.0
-            AdamW 1e-5 Solved 86.63
+            AdamW 5e-5 Solved 86.99/ lstm + conv3 + conv4 + g_layers/ 86.97 conv3 + conv4 + g_layers
+            / 86.82 full_conv + g_layers / 86.97 conv4 + g_layers/ 86.63 fc2-fc3
+            / 86.97 g_layers / 86.92 g_layers + fc1-fc2-fc3
             SGD_GC 1e-5 / 0.9 Solved 78.5
             AdamW 8e-6 Solved 86.63
             AdamW 5e-6 Not Solved 86.85
@@ -1365,6 +1386,7 @@ class DefenseGame:
         """
         RENDER_FLAG = True
         criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction='sum')
+        criterion_org = nn.CrossEntropyLoss(reduction='mean')
         if vqa_model_optim == 'AdamW':
             vqa_model_optimizer = optim.AdamW(
                 [{'params': vqa_model.parameters(), 'lr': vqa_model_lr,
@@ -1373,7 +1395,8 @@ class DefenseGame:
         elif vqa_model_optim == 'SGD':
             vqa_model_optimizer = optim.SGD(vqa_model.parameters(), lr=vqa_model_lr, momentum=0.9, weight_decay=1e-4)
         elif vqa_model_optim == 'SGD_GC':
-            vqa_model_optimizer = SGD_GC(params=vqa_model.parameters(), lr=vqa_model_lr, momentum=0.9, weight_decay=1e-4)
+            vqa_model_optimizer = SGD_GC(params=vqa_model.parameters(), lr=vqa_model_lr, momentum=0.9,
+                                         weight_decay=1e-4)
         else:
             raise ValueError('Optimizers Supported are [AdamW / SGD / SGD_GC]')
 
@@ -1384,6 +1407,7 @@ class DefenseGame:
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
+        normal_train_every_epochs = 1
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
@@ -1415,9 +1439,11 @@ class DefenseGame:
                 # Here we should test on other game / other agent #
                 if epochs_passed % 5 == 0:
                     self.evaluate(epoch=epochs_passed, minigame=minigame2, vqa_model=vqa_model,
-                                 adversarial_agent_eval=adversarial_agent_eval, render_flag=RENDER_FLAG)
+                                  adversarial_agent_eval=adversarial_agent_eval, render_flag=RENDER_FLAG)
                 RENDER_FLAG = False
                 epochs_passed += 1
+
+
 
             # Make Agent 2 Suggest Changes on Batch #
             sx, sy, _ = adversarial_agent(features, None)
@@ -1431,7 +1457,7 @@ class DefenseGame:
             # - VQA Predictions After in List Format
             # - VQA Predictions After in Softmax Format
 
-            _, confusion_rewards, change_rewards, vqa_predictions_softmax = self.get_rewards(
+            _, confusion_rewards, change_rewards, vqa_predictions_softmax, not_rendered = self.get_rewards(
                 vqa_model=vqa_model, org_data=org_data, image_data=image_data, programs=programs, y_real=y_real,
                 action_vector=mixed_actions,
                 resnet=self.resnet, render=RENDER_FLAG, batch_idx=current_batch_idx)
@@ -1441,8 +1467,13 @@ class DefenseGame:
             if vqa_predictions_softmax is not None:
                 y_real = y_real.to('cuda')
                 loss = 0
-                for i in range(self.batch_size):
-                    loss = loss + criterion(vqa_predictions_softmax[i, :].unsqueeze(0), y_real[i, :]) * mask[i]
+                ind = 0
+                ind_i = 0
+                while ind < self.batch_size:
+                    if not_rendered[ind] == 0:
+                        loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0), y_real[ind, :]) * mask[ind]
+                        ind_i += 1
+                    ind += 1
 
                 loss.backward()
 
@@ -1450,7 +1481,8 @@ class DefenseGame:
                 vqa_model_optimizer.step()
                 vqa_model_optimizer.zero_grad()
             else:
-                _print("Nothing was Rendered!")
+                pass
+                # _print("Nothing was Rendered!")
 
             batch_accuracy = 100 * (confusion_rewards.mean()).item()
             batch_confusion = 100 * (change_rewards.mean()).item()
@@ -1458,6 +1490,17 @@ class DefenseGame:
             confusion_drop.append(batch_confusion)
             epoch_accuracy_drop += batch_accuracy
             epoch_confusion_drop += batch_confusion
+
+
+            # Now perform a normal training step #
+            if epochs_passed % normal_train_every_epochs == 0:
+                vqa_predictions_softmax, _, _ = vqa_model(**image_data)
+                loss = criterion_org(vqa_predictions_softmax.to('cuda'), y_real.squeeze(1).to('cuda'))
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
+                vqa_model_optimizer.step()
+                vqa_model_optimizer.zero_grad()
+
             current_batch_idx += 1
 
         if logger is not None:
@@ -1495,7 +1538,7 @@ class DefenseGame:
             actionsy = torch.cat([f.unsqueeze(1) for f in sy], dim=1).max(2)[1]
             action = torch.cat([actionsx, actionsy], dim=1)
             mixed_actions = self.quantize(action)
-            _, confusion_rewards, change_rewards, vqa_predictions_softmax = self.get_rewards(
+            _, confusion_rewards, change_rewards, vqa_predictions_softmax, not_rendered = self.get_rewards(
                 vqa_model=vqa_model, org_data=org_data, image_data=image_data, programs=programs, y_real=y_real,
                 action_vector=mixed_actions,
                 resnet=self.resnet, render=render_flag, batch_idx=current_batch_idx, split='Evaluation')
@@ -1525,6 +1568,5 @@ class DefenseGame:
 
         else:
             raise NotImplementedError(f'Assess overall drop expects input rnfp, you entered: {train_name}')
-
 
         return results
