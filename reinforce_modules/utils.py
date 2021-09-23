@@ -903,7 +903,8 @@ class DefenseGame:
                  pipeline='extrapolation',
                  mode='visual',
                  train_range='0_10',
-                 train_name='rnfp'
+                 train_name='rnfp',
+                 use_mixed_data=False
                  ):
         if feature_extractor_backbone is None:
             raise ValueError('Feature Extractor Should be set to RN-State')
@@ -937,6 +938,7 @@ class DefenseGame:
         self.skip_rendering = False
         self.train_range = train_range
         self.train_name = train_name
+        self.use_mixed_data = use_mixed_data
 
     def save(self, model, range, path):
         if os.path.exists('/'.join(path.split('/')[:-1])):
@@ -1328,12 +1330,12 @@ class DefenseGame:
 
     def engage(self, minigame, minigame2, vqa_model=None, adversarial_agent=None, adversarial_agent_eval=None,
                train_vqa=False,
-               train_agent=False):
+               train_agent=False, but_list=None):
         if vqa_model is None:
             _print("[Warning] VQA Model in engage is None, assuming self.vqa_model.\n")
             vqa_model = self.vqa_model
             self.set_model_trainable(vqa_model, train_vqa,
-                                     but_list=['lstm', 'conv3', 'conv4', 'g_layers', 'fc3', 'fc2', 'fc1'])
+                                     but_list=but_list)
 
         if adversarial_agent is None:
             _print("[Warning] Adversarial Agent is None, assuming self.adversarial_agent_1.\n")
@@ -1366,7 +1368,7 @@ class DefenseGame:
 
     def extrapolation_pipeline(self, minigame, minigame2, vqa_model, adversarial_agent, adversarial_agent_eval,
                                logger=None,
-                               vqa_model_lr=1e-6,
+                               vqa_model_lr=5e-6,
                                vqa_model_optim='AdamW'):
         """
             In this Scenario, The VQA Agent is Trainable, and we have 2 different adversarial agents that are NOT TRAINABLE
@@ -1407,7 +1409,7 @@ class DefenseGame:
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
-        normal_train_every_epochs = 1
+        normal_train_every_epochs = 5
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
@@ -1443,8 +1445,6 @@ class DefenseGame:
                 RENDER_FLAG = False
                 epochs_passed += 1
 
-
-
             # Make Agent 2 Suggest Changes on Batch #
             sx, sy, _ = adversarial_agent(features, None)
             actionsx = torch.cat([f.unsqueeze(1) for f in sx], dim=1).max(2)[1]
@@ -1471,7 +1471,8 @@ class DefenseGame:
                 ind_i = 0
                 while ind < self.batch_size:
                     if not_rendered[ind] == 0:
-                        loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0), y_real[ind, :]) * mask[ind]
+                        loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0), y_real[ind, :]) * mask[
+                            ind]
                         ind_i += 1
                     ind += 1
 
@@ -1480,6 +1481,24 @@ class DefenseGame:
                 torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
                 vqa_model_optimizer.step()
                 vqa_model_optimizer.zero_grad()
+                # Now perform a normal training step #
+                if epochs_passed % normal_train_every_epochs == 0 and self.use_mixed_data:
+                    vqa_predictions_softmax, _, _ = vqa_model(**image_data)
+                    if vqa_predictions_softmax is not None:
+                        y_real = y_real.to('cuda')
+                        loss = 0
+                        ind = 0
+                        ind_i = 0
+                        while ind < self.batch_size:
+                            if not_rendered[ind] == 0:
+                                loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0).to('cuda'), y_real[ind, :])
+                                ind_i += 1
+                            ind += 1
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
+                    vqa_model_optimizer.step()
+                    vqa_model_optimizer.zero_grad()
+                    _print(f"VAC: {accuracy_metric(vqa_predictions_softmax.to('cpu'), y_real.squeeze(1).to('cpu'))}")
             else:
                 pass
                 # _print("Nothing was Rendered!")
@@ -1490,17 +1509,6 @@ class DefenseGame:
             confusion_drop.append(batch_confusion)
             epoch_accuracy_drop += batch_accuracy
             epoch_confusion_drop += batch_confusion
-
-
-            # Now perform a normal training step #
-            if epochs_passed % normal_train_every_epochs == 0:
-                vqa_predictions_softmax, _, _ = vqa_model(**image_data)
-                loss = criterion_org(vqa_predictions_softmax.to('cuda'), y_real.squeeze(1).to('cuda'))
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
-                vqa_model_optimizer.step()
-                vqa_model_optimizer.zero_grad()
-
             current_batch_idx += 1
 
         if logger is not None:

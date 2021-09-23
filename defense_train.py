@@ -82,9 +82,9 @@ def DefenseEvaluation(args, seed=1, logger=None):
                                batch_size=5,
                                defense_rounds=defense_rounds,
                                pipeline='extrapolation',
-                               mode='visual', train_name=train_name, train_range=train_range)
+                               mode='visual', train_name=train_name, train_range=train_range, use_mixed_data=args.use_mix == 'True')
     defense_game.engage(minigame=minigames[0], minigame2=minigames[1], vqa_model=None, adversarial_agent=None,
-                        adversarial_agent_eval=None, train_vqa=True, train_agent=False)
+                        adversarial_agent_eval=None, train_vqa=True, train_agent=False, but_list=['fc1'])
 
     defense_game.assess_overall_drop(train_name, train_range)
 
@@ -110,6 +110,7 @@ if __name__ == '__main__':
     parser.add_argument('--randomize_range', type=str, default='False')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--repeat', type=int, default=1)
+    parser.add_argument('--use_mix', type=str, default='False')
 
     args = parser.parse_args()
     if args.repeat == 1:
