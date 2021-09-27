@@ -142,7 +142,7 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
     parser.add_argument('--fool_model', type=str, default='rnfp')
-    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--seed', type=int, default=543)
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--backend', type=str, help='states or pixels', default='states')
 

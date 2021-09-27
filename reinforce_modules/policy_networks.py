@@ -457,10 +457,10 @@ class Re1nforceTrainer:
                     patience -= 1
 
                 if best_epoch_confusion_drop > limit:
-                    # self.model.save(
-                    #     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
-                    # logger.session['rl_agent'].upload(
-                    #     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
+                    self.model.save(
+                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
+                    logger.session['rl_agent'].upload(
+                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
                     limit += 1
                 _print(
                     f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} % | Patience: {patience}")
