@@ -157,7 +157,7 @@ if __name__ == '__main__':
     if args.repeat == 1:
         _print(f'Final Results on {args.fool_model}:')
 
-        logger = Deltalogger(exp_name, run_tag=[args.fool_model, 1000 * args.range, 1], dummy=True)
+        logger = Deltalogger(exp_name, run_tag=[args.fool_model, 1000 * args.range, 1], dummy=False)
 
         _print(PolicyEvaluation(args, args.seed, logger=logger))
     else:
