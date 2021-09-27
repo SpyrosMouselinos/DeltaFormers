@@ -42,8 +42,13 @@ def PolicyEvaluation(args, seed=1, logger=None):
         os.mkdir(f'./results/experiment_reinforce/{prefix}')
     BS = args.bs
 
+    if args.backend == 'states':
+        load_from = './results/experiment_rn/mos_epoch_164.pt'
+    else:
+        load_from = './results/experiment_fp/mos_epoch_219.pt'
+
     if prefix == 'state':
-        model, model_fool, val_dataloader = get_fool_model(device=args.device, load_from=args.load_from,
+        model, model_fool, val_dataloader = get_fool_model(device=args.device, load_from=load_from,
                                                            scenes_path=args.scenes_path,
                                                            questions_path=args.questions_path,
                                                            clvr_path=args.clvr_path,
@@ -65,7 +70,7 @@ def PolicyEvaluation(args, seed=1, logger=None):
             range_offset = None
         model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example = get_visual_fool_model(
             device=args.device,
-            load_from=args.load_from,
+            load_from=load_from,
             scenes_path=args.scenes_path,
             questions_path=args.questions_path,
             clvr_path=args.clvr_path,
@@ -114,8 +119,6 @@ def PolicyEvaluation(args, seed=1, logger=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
-    parser.add_argument('--load_from', type=str, help='continue training',
-                        default='./results/experiment_fp/mos_epoch_219.pt')
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
@@ -125,8 +128,8 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=35)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=1e-2)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=100)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=5)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
@@ -138,10 +141,10 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='sa')
+    parser.add_argument('--fool_model', type=str, default='rnfp')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--repeat', type=int, default=1)
-    parser.add_argument('--backend', type=str, help='states or pixels', default='pixels')
+    parser.add_argument('--backend', type=str, help='states or pixels', default='states')
 
     args = parser.parse_args()
 
@@ -154,7 +157,7 @@ if __name__ == '__main__':
     if args.repeat == 1:
         _print(f'Final Results on {args.fool_model}:')
 
-        logger = Deltalogger(exp_name, run_tag=[args.fool_model, 1000 * args.range, 1], dummy=False)
+        logger = Deltalogger(exp_name, run_tag=[args.fool_model, 1000 * args.range, 1], dummy=True)
 
         _print(PolicyEvaluation(args, args.seed, logger=logger))
     else:

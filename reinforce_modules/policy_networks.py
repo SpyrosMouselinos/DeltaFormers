@@ -84,7 +84,7 @@ class FFNet(nn.Module):
         self.input_size = input_size
         # Pre-Processing #
         self.fc1 = nn.Linear(input_size, input_size // 2)
-        # self.fc2 = nn.Linear(input_size // 2, input_size // 2)
+        self.fc2 = nn.Linear(input_size // 2, input_size // 2)
         # self.fc3 = nn.Linear(input_size // 2, input_size // 2)
 
         self.obj1 = nn.Linear(input_size // 2, input_size // 6)
@@ -141,7 +141,7 @@ class FFNet(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
-        # x = F.relu(self.fc2(x), inplace=True)
+        x = F.relu(self.fc2(x), inplace=True)
         # x = F.relu(self.fc3(x), inplace=True)
         obj1 = F.relu(self.obj1(x), inplace=True)
         obj1 = self.d1(obj1)
@@ -425,7 +425,7 @@ class Re1nforceTrainer:
         epochs_passed = 0
         epoch_accuracy_drop = 0
         epoch_confusion_drop = 0
-        patience = 30
+        patience = 100
         epoch_accuracy_drop_history = []
         epoch_confusion_drop_history = []
 
