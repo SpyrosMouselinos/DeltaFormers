@@ -80,9 +80,15 @@ def PolicyEvaluation(args, seed=1, logger=None):
     rl_game = ConfusionGame(testbed_model=model, confusion_model=model_fool, device='cuda', batch_size=BS,
                             confusion_weight=args.confusion_weight, change_weight=args.change_weight,
                             fail_weight=args.fail_weight, invalid_weight=args.invalid_weight, mode=args.mode,
-                            render=args.mode == 'visual')
+                            render=args.mode == 'visual', backend=args.backend)
     if args.mode == 'state' or args.mode == 'visual':
-        model = PolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
+        if args.backend == 'states':
+            input_size = 512
+        elif args.backend == 'pixels':
+            input_size = 256
+        else:
+            raise ValueError(f"Backend must be [states/pixels] you entered: {args.backend}")
+        model = PolicyNet(input_size=input_size, hidden_size=512, dropout=0.0, reverse_input=True)
     elif args.mode == 'imagenet':
         model = ImageNetPolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
     else:
@@ -109,7 +115,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
     parser.add_argument('--load_from', type=str, help='continue training',
-                        default='./results/experiment_rn/mos_epoch_164.pt')
+                        default='./results/experiment_fp/mos_epoch_219.pt')
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
     parser.add_argument('--questions_path', type=str, help='folder of questions', default='data/')
     parser.add_argument('--clvr_path', type=str, help='folder before images', default='data/')
@@ -119,12 +125,12 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=9)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=35)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=1e-2)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=5)
     parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=0.1)
+    parser.add_argument('--range', type=float, default=0.01)
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--randomize_range', type=str, default='False')
@@ -132,15 +138,23 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='rnfp')
+    parser.add_argument('--fool_model', type=str, default='sa')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--repeat', type=int, default=1)
+    parser.add_argument('--backend', type=str, help='states or pixels', default='pixels')
 
     args = parser.parse_args()
+
+    if args.backend == 'states':
+        exp_name = 'DeltaFormers'
+    elif args.backend == 'pixels':
+        exp_name = 'DeltaFormersPixels'
+    else:
+        raise ValueError(f'Backend has to be one of states/pixels, you entered : {args.backend}')
     if args.repeat == 1:
         _print(f'Final Results on {args.fool_model}:')
-        # TODO: DELETE THIS
-        logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, 1], dummy=True)
+
+        logger = Deltalogger(exp_name, run_tag=[args.fool_model, 1000 * args.range, 1], dummy=False)
 
         _print(PolicyEvaluation(args, args.seed, logger=logger))
     else:
@@ -148,8 +162,7 @@ if __name__ == '__main__':
         cons_drops = []
         for seed in range(args.seed, args.repeat + args.seed):
             experiment_number = seed - args.seed
-            # TODO: DELETE THIS
-            logger = Deltalogger('DeltaFormers', run_tag=[args.fool_model, 1000 * args.range, experiment_number],
+            logger = Deltalogger(exp_name, run_tag=[args.fool_model, 1000 * args.range, experiment_number],
                                  dummy=False)
 
             a, c = PolicyEvaluation(args, seed, logger=logger)

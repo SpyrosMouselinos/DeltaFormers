@@ -84,7 +84,7 @@ def DefenseEvaluation(args, seed=1, logger=None):
                                pipeline='extrapolation',
                                mode='visual', train_name=train_name, train_range=train_range, use_mixed_data=args.use_mix == 'True')
     defense_game.engage(minigame=minigames[0], minigame2=minigames[1], vqa_model=None, adversarial_agent=None,
-                        adversarial_agent_eval=None, train_vqa=True, train_agent=False, but_list=['fc1'])
+                        adversarial_agent_eval=None, train_vqa=True, train_agent=False, but_list=['lstm','conv1','conv2','conv3','conv4','g_layers','fc3','fc2','fc1'])
 
     defense_game.assess_overall_drop(train_name, train_range)
 
@@ -96,17 +96,17 @@ if __name__ == '__main__':
     parser.add_argument('--bs', type=int, help='Batch Size', default=5)
     parser.add_argument('--defense_rounds', type=int, help='Rounds / Epochs of Defense', default=1000)
     parser.add_argument('--aalf1', type=str, help='Adversarial Agent Load From 1',
-                        default='./results/experiment_reinforce/visual/model_reinforce_0.1k_rnfp_0.pt')
+                        default='./results/experiment_reinforce/visual/model_reinforce_0.5k_rnfp_0.pt')
     parser.add_argument('--aalf2', type=str, help='Adversarial Agent Load From 2',
-                        default='./results/experiment_reinforce/visual/model_reinforce_0.1k_rnfp_100.pt')
+                        default='./results/experiment_reinforce/visual/model_reinforce_0.5k_rnfp_0.pt')
     parser.add_argument('--felf', type=str, help='Feature Extractor Load From',
                         default='./results/experiment_rn/mos_epoch_164.pt')
     parser.add_argument('--vmlt', type=str, help='VQA Load Type', default='rnfp')
 
     parser.add_argument('--range_1_offset', type=float, default=0)
-    parser.add_argument('--range_2_offset', type=float, default=100)
-    parser.add_argument('--range_1', type=float, default=0.1)
-    parser.add_argument('--range_2', type=float, default=0.1)
+    parser.add_argument('--range_2_offset', type=float, default=250)
+    parser.add_argument('--range_1', type=float, default=0.25)
+    parser.add_argument('--range_2', type=float, default=0.25)
     parser.add_argument('--randomize_range', type=str, default='False')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--repeat', type=int, default=1)

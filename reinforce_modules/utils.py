@@ -8,6 +8,7 @@ import os.path as osp
 import sys
 import numpy as np
 import torch.nn
+import torchvision.transforms
 import yaml
 from torch import optim
 from utils.train_utils import SGD_GC
@@ -32,6 +33,7 @@ from skimage.color import rgba2rgb
 from skimage.io import imread
 from skimage.transform import resize as imresize
 from oracle.Oracle_CLEVR import Oracle
+from torch.nn.functional import softmax as sm
 
 sns.set_style('darkgrid')
 
@@ -526,7 +528,8 @@ class ConfusionGame:
                  fail_weight=-1.0,
                  invalid_weight=0.0,
                  mode='state',
-                 render=False
+                 render=False,
+                 backend='states'
                  ):
 
         self.confusion_weight = confusion_weight
@@ -552,6 +555,8 @@ class ConfusionGame:
         self.oracle = Oracle(metadata_path='./metadata.json')
         self.mode = mode
         self.render = render
+        self.backend = backend
+        self.downsizer = torchvision.transforms.Resize(128)
 
     def extract_features(self, iter_on_data):
         """
@@ -572,7 +577,10 @@ class ConfusionGame:
                 if self.mode == 'imagenet':
                     y_feats = image_data['image']
                 else:
-                    _, _, y_feats = self.testbed_model(**data)
+                    if self.backend == 'states':
+                        _, _, y_feats = self.testbed_model(**data)
+                    elif self.backend == 'pixels':
+                        _, _, y_feats = self.testbed_model(**{'image': self.downsizer(image_data['image']), 'question': image_data['question']})
             else:
                 data = kwarg_dict_to_device(data, self.device)
                 _, _, y_feats = self.testbed_model(**data)
@@ -1368,7 +1376,7 @@ class DefenseGame:
 
     def extrapolation_pipeline(self, minigame, minigame2, vqa_model, adversarial_agent, adversarial_agent_eval,
                                logger=None,
-                               vqa_model_lr=5e-6,
+                               vqa_model_lr=5e-5,
                                vqa_model_optim='AdamW'):
         """
             In this Scenario, The VQA Agent is Trainable, and we have 2 different adversarial agents that are NOT TRAINABLE
@@ -1388,7 +1396,7 @@ class DefenseGame:
         """
         RENDER_FLAG = True
         criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction='sum')
-        criterion_org = nn.CrossEntropyLoss(reduction='mean')
+        criterion_match = nn.MSELoss(reduction='mean')
         if vqa_model_optim == 'AdamW':
             vqa_model_optimizer = optim.AdamW(
                 [{'params': vqa_model.parameters(), 'lr': vqa_model_lr,
@@ -1457,22 +1465,23 @@ class DefenseGame:
             # - VQA Predictions After in List Format
             # - VQA Predictions After in Softmax Format
 
-            _, confusion_rewards, change_rewards, vqa_predictions_softmax, not_rendered = self.get_rewards(
+            _, confusion_rewards, change_rewards, vqa_predictions_softmax_agent, not_rendered = self.get_rewards(
                 vqa_model=vqa_model, org_data=org_data, image_data=image_data, programs=programs, y_real=y_real,
                 action_vector=mixed_actions,
                 resnet=self.resnet, render=RENDER_FLAG, batch_idx=current_batch_idx)
             # In order not to overfit in this region, we will use the rewards as a mask of what to backprop #
             # We need to backprop only the images that are incorrectly classified after the agent not the rest #
             mask = torch.FloatTensor(confusion_rewards).to(self.device)
-            if vqa_predictions_softmax is not None:
+            if vqa_predictions_softmax_agent is not None:
                 y_real = y_real.to('cuda')
                 loss = 0
                 ind = 0
                 ind_i = 0
                 while ind < self.batch_size:
                     if not_rendered[ind] == 0:
-                        loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0), y_real[ind, :]) * mask[
-                            ind]
+                        loss = loss + criterion(vqa_predictions_softmax_agent[ind_i, :].unsqueeze(0), y_real[ind, :]) * \
+                               mask[
+                                   ind]
                         ind_i += 1
                     ind += 1
 
@@ -1482,6 +1491,25 @@ class DefenseGame:
                 vqa_model_optimizer.step()
                 vqa_model_optimizer.zero_grad()
                 # Now perform a normal training step #
+                # if epochs_passed % normal_train_every_epochs == 0 and self.use_mixed_data:
+                #     vqa_predictions_softmax, _, _ = vqa_model(**image_data)
+                #     if vqa_predictions_softmax is not None:
+                #         y_real = y_real.to('cuda')
+                #         loss = 0
+                #         ind = 0
+                #         ind_i = 0
+                #         while ind < self.batch_size:
+                #             if not_rendered[ind] == 0:
+                #                 loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0).to('cuda'), y_real[ind, :])
+                #                 ind_i += 1
+                #             ind += 1
+                #     loss.backward()
+                #     torch.nn.utils.clip_grad_norm_(vqa_model.parameters(), 50)
+                #     vqa_model_optimizer.step()
+                #     vqa_model_optimizer.zero_grad()
+                #     _print(f"VAC: {accuracy_metric(vqa_predictions_softmax.to('cpu'), y_real.squeeze(1).to('cpu'))}")
+
+                # Now perform a matching training step #
                 if epochs_passed % normal_train_every_epochs == 0 and self.use_mixed_data:
                     vqa_predictions_softmax, _, _ = vqa_model(**image_data)
                     if vqa_predictions_softmax is not None:
@@ -1491,7 +1519,9 @@ class DefenseGame:
                         ind_i = 0
                         while ind < self.batch_size:
                             if not_rendered[ind] == 0:
-                                loss = loss + criterion(vqa_predictions_softmax[ind_i, :].unsqueeze(0).to('cuda'), y_real[ind, :])
+                                loss = loss + 100 * criterion_match(
+                                    sm(vqa_predictions_softmax[ind_i, :]).unsqueeze(0).to('cuda'),
+                                    sm(vqa_predictions_softmax_agent[ind_i, :]).unsqueeze(0).to('cuda').detach())
                                 ind_i += 1
                             ind += 1
                     loss.backward()

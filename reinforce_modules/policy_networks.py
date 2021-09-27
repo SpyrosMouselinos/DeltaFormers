@@ -278,15 +278,13 @@ class BVNet(nn.Module):
 
 
 class PolicyNet(nn.Module):
-    def __init__(self, input_size, hidden_size, dropout=0.0, reverse_input=False):
+    def __init__(self, input_size=512, hidden_size=512, dropout=0.0, reverse_input=False):
         super(PolicyNet, self).__init__()
         self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.reverse_input = reverse_input
         self.dropout = dropout
         # self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
-        self.final_model = FFNet(512, dropout)
-        self.value_model = BVNet(512)
+        self.final_model = FFNet(input_size, dropout)
+        self.value_model = BVNet(input_size)
 
     def forward(self, x, q=None):
         # _, (q_summary, _) = self.question_model(q)
