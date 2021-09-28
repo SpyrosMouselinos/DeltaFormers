@@ -1,25 +1,16 @@
-import torch
-import numpy as np
-import torchvision
-from skimage.io import imread
-from skimage.transform import resize as imresize
-from skimage.color import rgba2rgb
-from torchvision.models import resnet101
-import torch.nn.functional as F
-import torch.nn as nn
-import h5py
-from pathlib import Path
-
 import json
 import os
-from torch.autograd import Variable
+
+import numpy as np
+import torch
+import torchvision
+from skimage.color import rgba2rgb
+from skimage.io import imread
+from skimage.transform import resize as imresize
 
 from fool_models.tbd import _Seq2Seq, TbDNet
 from neural_render.blender_render_utils.constants import find_platform_slash
 from utils.train_utils import ImageCLEVR_HDF5
-from skimage.color import rgba2rgb
-from skimage.io import imread
-from skimage.transform import resize as imresize
 
 PLATFORM_SLASH = find_platform_slash()
 UP_TO_HERE_ = PLATFORM_SLASH.join(os.path.abspath(__file__).split(PLATFORM_SLASH)[:-2]).replace(PLATFORM_SLASH, '/')
@@ -126,7 +117,7 @@ def inference_with_tbh(loader=None, model=None, resnet_extractor=None):
     print()
     for batch in loader:
         (_, iq), answers, _ = batch
-        #iq, answers = batch
+        # iq, answers = batch
         image = iq['image'].to('cuda')
         questions_var = iq['question'].to('cuda')
         feats_var = resnet_extractor(image)
@@ -159,7 +150,51 @@ def inference_with_tbh(loader=None, model=None, resnet_extractor=None):
     return final_preds
 
 
-# model = load_tbd()
+def sinference_with_tbh(model=None, resnet_extractor=None):
+    final_preds = []
+    dtype = torch.cuda.FloatTensor
+    program_generator, execution_engine = model
+    program_generator.type(dtype)
+    program_generator.eval()
+    execution_engine.type(dtype)
+    execution_engine.eval()
+    img = imread('C:\\Users\\Guldan\\Desktop\\saveme.png')
+    question = 'Is there a big brown object of the same shape as the green thing ;'
+    question_l = [1, 10, 85, 14, 25, 30, 64, 66, 84, 74, 75, 21, 84, 45, 86, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    img = rgba2rgb(img)
+    img = imresize(img, (224,224))
+    img = img.astype('float32')
+    img = img.transpose(2, 0, 1)[None]
+    mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
+    std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
+    img = (img - mean) / std
+    img_var = torch.FloatTensor(img).to('cuda')
+    image = resnet_extractor(img_var)
+    image = image.to('cuda')
+    questions_var = torch.LongTensor([question_token_to_idx[f] for f in question[:-1].split(' ')]).to('cuda')
+    questions_var = questions_var.unsqueeze(0)
+    progs = []
+    for i in range(questions_var.size(0)):
+        program = program_generator.reinforce_sample(questions_var[i, :].view(1, -1))
+        progs.append(program.cpu().numpy().squeeze())
+    progs = np.asarray(progs)
+
+    scores = execution_engine(image, torch.LongTensor(progs))
+
+    _, preds = scores.data.cpu().max(1)
+
+    correct_preds = []
+    for item in preds.detach().cpu().numpy():
+        correct_preds.append(execution_engine.translate_codes[item] - 4)
+
+    print(correct_preds)
+    print(idx_to_answer_token(correct_preds))
+
+    return final_preds
+
+
+#model = load_tbd()
 # loader = load_loader()
-# resnet_extractor = load_resnet_backbone()
-# inference_with_tbh(loader=loader, model=model, resnet_extractor=resnet_extractor)
+#resnet_extractor = load_resnet_backbone()
+#inference_with_tbh(loader=None, model=model, resnet_extractor=resnet_extractor)
+#sinference_with_tbh(model=model, resnet_extractor=resnet_extractor)
