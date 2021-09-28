@@ -84,7 +84,7 @@ class FFNet(nn.Module):
         self.input_size = input_size
         # Pre-Processing #
         self.fc1 = nn.Linear(input_size, input_size // 2)
-        self.fc2 = nn.Linear(input_size // 2, input_size // 2)
+        #self.fc2 = nn.Linear(input_size // 2, input_size // 2)
         # self.fc3 = nn.Linear(input_size // 2, input_size // 2)
 
         self.obj1 = nn.Linear(input_size // 2, input_size // 6)
@@ -141,7 +141,7 @@ class FFNet(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
-        x = F.relu(self.fc2(x), inplace=True)
+        #x = F.relu(self.fc2(x), inplace=True)
         # x = F.relu(self.fc3(x), inplace=True)
         obj1 = F.relu(self.obj1(x), inplace=True)
         obj1 = self.d1(obj1)
@@ -282,7 +282,7 @@ class PolicyNet(nn.Module):
         super(PolicyNet, self).__init__()
         self.input_size = input_size
         self.dropout = dropout
-        # self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
+        #self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
         self.final_model = FFNet(input_size, dropout)
         self.value_model = BVNet(input_size)
 
@@ -407,7 +407,7 @@ class Re1nforceTrainer:
         t = 10
         self.model = self.model.to(self.device)
         self.model = self.model.train()
-        if self.lr >= 5e-4:
+        if self.lr > 5e-4:
             optimizer = optim.AdamW(
                 [{'params': self.model.final_model.parameters(), 'lr': self.lr * 0.9, 'weight_decay': 1e-4},
                  {'params': self.model.value_model.parameters(), 'lr': self.lr * 0.1, 'weight_decay': 1e-4},
@@ -431,7 +431,7 @@ class Re1nforceTrainer:
 
         while epochs_passed < self.training_duration:
             try:
-                features, org_data, _ = self.game.extract_features(self.dataloader_iter)
+                features, org_data, y_real = self.game.extract_features(self.dataloader_iter)
                 if self.predictions_before_pre_calc is not None:
                     self.current_predictions_before = self.predictions_before_pre_calc[
                                                       (batch_idx % len(self.dataloader)) * self.batch_size:((
@@ -442,7 +442,7 @@ class Re1nforceTrainer:
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
-                features, org_data, _ = self.game.extract_features(self.dataloader_iter)
+                features, org_data, y_real = self.game.extract_features(self.dataloader_iter)
                 if self.predictions_before_pre_calc is not None:
                     self.current_predictions_before = self.predictions_before_pre_calc[
                                                       (batch_idx % len(self.dataloader)) * self.batch_size:((
@@ -456,12 +456,15 @@ class Re1nforceTrainer:
                         epoch_accuracy_drop_history[-15:]) / len(epoch_accuracy_drop_history[-15:]):
                     patience -= 1
 
-                if best_epoch_confusion_drop > limit:
+                if best_epoch_confusion_drop >= limit:
+                    limit = best_epoch_confusion_drop - 0.01
                     # self.model.save(
                     #     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
                     # logger.session['rl_agent'].upload(
                     #     f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}_acc_{round(best_epoch_accuracy_drop, 1)}.pt')
-                    limit += 1
+                    if self.initial_example is not None:
+                        self.model.save(
+                            f'./results/experiment_reinforce/visual/model_reinforce_{self.name}_{self.fool_model_name}_{self.initial_example}.pt')
                 _print(
                     f"REINFORCE 2  Epoch {epochs_passed} | Epoch Accuracy Drop: {best_epoch_accuracy_drop}% | Epoch Confusion {best_epoch_confusion_drop} % | Patience: {patience}")
                 if logger is not None:
@@ -516,21 +519,26 @@ class Re1nforceTrainer:
                 confusion_drop.append(batch_confusion)
                 epoch_accuracy_drop += batch_accuracy
                 epoch_confusion_drop += batch_confusion
-                if epochs_passed % log_every == 0 and epochs_passed > 0 and log_every != -1:
-                    _print(
-                        f"REINFORCE2 {batch_idx} / {self.training_duration} | Accuracy Dropped By: {np.array(accuracy_drop)[-log_every:].mean()}% | Model confused: {np.array(confusion_drop)[-log_every:].mean()}")
-                if epochs_passed % save_every == 0 and epochs_passed > 0:
-                    self.model.save(
-                        f'./results/experiment_reinforce/{prefix}/model_reinforce_{self.name}_{self.fool_model_name}.pt')
+
+                successes = 0
+                for i,v in enumerate(confusion_rewards.detach().cpu().numpy()):
+                    if v == 1:
+                        name = (batch_idx % len(self.dataloader)) * self.batch_size + i
+                        name = self.add_nulls(name, 6)
+                        pseudo_name = self.add_nulls(successes, 6)
+                        self.print_over(name, f'./neural_render/images/CLEVR_Rendered_{pseudo_name}.png',
+                                        ' '.join([index2q[f] for f in org_data['question'][i].cpu().numpy() if f != 0][1:-1]),
+                                        index2a[y_real.to('cpu').numpy()[i, 0] + 4],
+                                        index2a[predictions_after.to('cpu').numpy()[0] + 4])
+                        successes += 1
+
                 if patience == 0:
                     break
                 batch_idx += 1
             except KeyboardInterrupt:
                 _print("Handling Graceful Exit...\n")
                 break
-        if self.initial_example is not None:
-            self.model.save(
-                f'./results/experiment_reinforce/visual/model_reinforce_{self.name}_{self.fool_model_name}_{self.initial_example}.pt')
+
 
 
         # fig1 = plt.figure(figsize=(10, 10))
@@ -560,6 +568,10 @@ class Re1nforceTrainer:
         return max(epoch_accuracy_drop_history), max(epoch_confusion_drop_history)
 
     def print_over(self, index, path, question, oa, aa):
+        if os.path.exists(f'./results/images/{self.fool_model_name}'):
+            pass
+        else:
+            os.mkdir(f'./results/images/{self.fool_model_name}')
         ba = f"Before: {oa}"
         oa = f"GT: {oa}"
         if aa is not None:
@@ -574,82 +586,104 @@ class Re1nforceTrainer:
         plt.figure(figsize=(8, 8))
         plt.grid(None)
         plt.imshow(img)
-        plt.text(0, 30, split_q(question), bbox=dict(fill=False, edgecolor='red', linewidth=1))
-        plt.text(85, 15, split_q(oa), bbox=dict(fill=False, edgecolor='green', linewidth=1))
-        plt.text(85, 35, split_q(ba), bbox=dict(fill=False, edgecolor='blue', linewidth=1))
-        if aa is not None:
-            plt.text(85, 55, split_q(aa), bbox=dict(fill=False, edgecolor='yellow', linewidth=1))
-        plt.savefig(f'./results/images/{index}_{self.fool_model_name}.png')
+        #plt.text(0, 30, split_q(question), bbox=dict(fill=False, edgecolor='red', linewidth=1))
+        #plt.text(85, 15, split_q(oa), bbox=dict(fill=False, edgecolor='green', linewidth=1))
+        #plt.text(85, 35, split_q(ba), bbox=dict(fill=False, edgecolor='blue', linewidth=1))
+        #if aa is not None:
+        #    plt.text(85, 55, split_q(aa), bbox=dict(fill=False, edgecolor='yellow', linewidth=1))
+        plt.savefig(f'./results/images/{self.fool_model_name}/{index}_{self.fool_model_name}.png')
         plt.close()
+        with open(f'./results/images/{self.fool_model_name}/{index}_{self.fool_model_name}.txt', 'w') as fout:
+            fout.write(question)
+            fout.write('\n')
+            fout.write(oa)
+            fout.write('\n')
+            fout.write(ba)
+            fout.write('\n')
+            fout.write(aa)
         return
 
-    def evaluate(self, example_range=(0, 1280)):
+    def evaluate(self, example_range=(0, 100), offset=0, n_trials=1):
         self.model = self.model.to(self.device)
         self.model.zero_grad()
         self.model = self.model.eval()
 
-        batch_idx = 0
-        n_burn_iterations = example_range[0] // self.batch_size
-        n_eligible_iterations = (example_range[1] - example_range[0]) // self.batch_size
-        while batch_idx < n_burn_iterations:
-            _ = next(self.dataloader_iter)
-            batch_idx += 1
+        # batch_idx = 0
+        # n_burn_iterations = example_range[0] // self.batch_size
+        # n_eligible_iterations = (example_range[1] - example_range[0]) // self.batch_size
+        # while batch_idx < n_burn_iterations:
+        #     _ = next(self.dataloader_iter)
+        #     batch_idx += 1
 
         batch_idx = 0
         drop = 0
         confusion = 0
         worth_discovering = 0
-        while batch_idx < n_eligible_iterations:
+        while batch_idx < 10:
             try:
                 features, org_data, y_real = self.game.extract_features(self.dataloader_iter)
+                print(batch_idx)
                 if self.predictions_before_pre_calc is not None:
-                    self.current_predictions_before = self.predictions_before_pre_calc[
-                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((
-                                                                                                                    batch_idx % len(
-                                                                                                                self.dataloader)) + 1) * self.batch_size]
+                    self.current_predictions_before = self.predictions_before_pre_calc[(batch_idx % len(self.dataloader)) * self.batch_size:((batch_idx % len(self.dataloader)) + 1) * self.batch_size]
                 else:
                     self.current_predictions_before = None
             except StopIteration:
                 del self.dataloader_iter
                 self.dataloader_iter = iter(self.dataloader)
                 break
-            sx, sy, state_values = self.model(
-                features, org_data['question'])
-            actionsx = torch.cat([f.unsqueeze(1) for f in sx], dim=1).max(2)[1]
-            actionsy = torch.cat([f.unsqueeze(1) for f in sy], dim=1).max(2)[1]
+            if n_trials == 1:
+                sx, sy, state_values = self.model(
+                    features, org_data['question'])
+                actionsx = torch.cat([f.unsqueeze(1) for f in sx], dim=1).max(2)[1]
+                actionsy = torch.cat([f.unsqueeze(1) for f in sy], dim=1).max(2)[1]
+                action = torch.cat([actionsx, actionsy], dim=1)
+                # Calc Reward #
+                mixed_actions = self.quantize(action)
+                rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
+                    action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
+                    resnet=self.resnet)
+                state_values = state_values.squeeze(1).detach().cpu().numpy()
+                drop += (confusion_rewards > 0).sum()
+                confusion += (change_rewards > 0).sum()
+                worth_discovering += (state_values + 0.1 > 0.05).sum()
+            else:
+                sx, sy, state_values_ = self.model(
+                    features, org_data['question'])
+                for i in range(0, n_trials):
+                    action_probs_x = torch.distributions.Categorical(
+                        torch.softmax(torch.cat([f.unsqueeze(1) for f in sx], dim=1) / 10, dim=2))
+                    action_probs_y = torch.distributions.Categorical(
+                        torch.softmax(torch.cat([f.unsqueeze(1) for f in sy], dim=1) / 10, dim=2))
 
-            action = torch.cat([actionsx, actionsy], dim=1)
-            # Calc Reward #
-            mixed_actions = self.quantize(action)
-            rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
-                action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
-                resnet=self.resnet)
-            state_values = state_values.squeeze(1).detach().cpu().numpy()
-            drop += (confusion_rewards > 0).sum()
-            confusion += (change_rewards > 0).sum()
-            worth_discovering += (state_values + 0.1 > 0.05).sum()
+                    actionsx = action_probs_x.sample()
+                    actionsx *= org_data['types'][:,0:10]
+                    actionsy = action_probs_y.sample()
+                    actionsy *= org_data['types'][:,0:10]
+
+                    action = torch.cat([actionsx, actionsy], dim=1)
+                    # Calc Reward #
+                    mixed_actions = self.quantize(action)
+                    rewards_, confusion_rewards, change_rewards, fail_rewards, invalid_scene_rewards, scene, predictions_after, state_after = self.game.get_rewards(
+                        action_vector=mixed_actions, current_predictions_before=self.current_predictions_before,
+                        resnet=self.resnet)
+                    state_values = state_values_.squeeze(1).detach().cpu().numpy()
+                    drop += (confusion_rewards > 0).sum()
+                    confusion += (change_rewards > 0).sum()
+                    worth_discovering += (state_values + 0.1 > 0.05).sum()
+                    if (confusion_rewards > 0).sum() > 0:
+                        break
 
             if (confusion_rewards > 0).sum() > 0:
-                # final_images, final_questions = self.game.state2img(kwarg_dict_to_device(org_data, 'cpu'), delete_every=False, bypass=False,
-                #                    retry=True, custom_index=batch_idx)
-                if batch_idx < 10:
-                    name = '0' + str(batch_idx)
-                else:
-                    name = '10'
-                # if len(final_images) == 1:
-                #    self.print_over(f'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\images\\CLEVR_Rendered_0000{name}.png', ' '.join([index2q[f] for f in final_questions[0].numpy() if f != 0][1:-1]), index2a[y_real.to('cpu').numpy()[0,0] + 4], None)
+                name = int(batch_idx + offset)
+                name = self.add_nulls(name, 6)
                 final_images, final_questions = self.game.state2img(kwarg_dict_to_device(state_after, 'cpu'),
                                                                     delete_every=False, bypass=True,
-                                                                    custom_index=batch_idx)
+                                                                    custom_index=batch_idx + offset)
                 if len(final_images) == 1:
-                    self.print_over(batch_idx, f'./neural_render/images/CLEVR_Rendered_0000{name}.png',
+                    self.print_over(batch_idx, f'./neural_render/images/CLEVR_Rendered_{name}.png',
                                     ' '.join([index2q[f] for f in final_questions[0].numpy() if f != 0][1:-1]),
                                     index2a[y_real.to('cpu').numpy()[0, 0] + 4],
                                     index2a[predictions_after.to('cpu').numpy()[0] + 4])
-                # q = bird_eye_view(batch_idx, x=kwarg_dict_to_device(org_data, 'cpu'), y=y_real.to('cpu').numpy(),
-                #                    mode='before', q=0, a=0)
-                # _ = bird_eye_view(batch_idx, x=scene, y=y_real.to('cpu').numpy(), mode='after', q=q,
-                #                   a=predictions_after)
 
             batch_idx += 1
 
@@ -725,3 +759,9 @@ class Re1nforceTrainer:
         plt.savefig(f'./results/experiment_reinforce/epoch_progress{self.name}.png')
         plt.show()
         plt.close()
+
+    def add_nulls(self, int, cnt):
+        nulls = str(int)
+        for i in range(cnt - len(str(int))):
+            nulls = '0' + nulls
+        return nulls

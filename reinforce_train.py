@@ -98,22 +98,25 @@ def PolicyEvaluation(args, seed=1, logger=None):
         model = ImageNetPolicyNet(input_size=128, hidden_size=256, dropout=0.0, reverse_input=True)
     else:
         raise ValueError
-    if args.cont > 0:
-        print("Loading model...")
-        model.load(f'./results/experiment_reinforce/visual/model_reinforce_0.01k_rnfp.pt')
+
 
     if args.mode == 'visual':
         fool_model_name = args.fool_model
     else:
         fool_model_name = 'LinAttFormer'
+
+
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=val_dataloader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
                                predictions_before_pre_calc=predictions_before_pre_calc, resnet=resnet,
                                fool_model_name=fool_model_name, initial_example=initial_example)
-
-    best_drop, best_confusion = trainer.train(log_every=-1, save_every=100, logger=logger)
-    #trainer.evaluate(example_range=(0, 100))
-    return best_drop, best_confusion
+    if args.model_load_from != 'None':
+        print("Loading model...")
+        model.load(args.model_load_from)
+        trainer.evaluate(example_range=(0, 10), offset=args.range_offset // 10, n_trials=10)
+    else:
+        best_drop, best_confusion = trainer.train(log_every=-1, save_every=100, logger=logger)
+        return best_drop, best_confusion
 
 
 if __name__ == '__main__':
@@ -128,12 +131,12 @@ if __name__ == '__main__':
     parser.add_argument('--change_weight', type=float, help='what kind of experiment to run', default=0.1)
     parser.add_argument('--fail_weight', type=float, help='what kind of experiment to run', default=-0.1)
     parser.add_argument('--invalid_weight', type=float, help='what kind of experiment to run', default=-0.8)
-    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=100)
-    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-3)
-    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=5)
-    parser.add_argument('--cont', type=int, help='what kind of experiment to run', default=0)
+    parser.add_argument('--train_duration', type=int, help='what kind of experiment to run', default=30)
+    parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
+    parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
     parser.add_argument('--range', type=float, default=0.01)
+    parser.add_argument('--model_load_from', type=str, default='None')
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--randomize_range', type=str, default='False')
@@ -141,7 +144,7 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='rnfp')
+    parser.add_argument('--fool_model', type=str, default='iep')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--backend', type=str, help='states or pixels', default='states')

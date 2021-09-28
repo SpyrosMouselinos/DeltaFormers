@@ -138,9 +138,9 @@ parser.add_argument('--use_gpu', default=1, type=int,
                     help="Setting --use_gpu 1 enables GPU-accelerated rendering using CUDA. " +
                          "You must have an NVIDIA GPU with the CUDA toolkit installed for " +
                          "to work.")
-parser.add_argument('--width', default=480, type=int,
+parser.add_argument('--width', default=224, type=int,
                     help="The width (in pixels) for the rendered images")
-parser.add_argument('--height', default=320, type=int,
+parser.add_argument('--height', default=224, type=int,
                     help="The height (in pixels) for the rendered images")
 
 # TODO(Spyros): Make all these iterables (maybe we can vectorize the image production?)
