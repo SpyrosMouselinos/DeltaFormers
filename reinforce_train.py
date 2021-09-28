@@ -140,12 +140,12 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--randomize_range', type=str, default='True')
-    parser.add_argument('--range_offset', type=int, default=0)
+    parser.add_argument('--range_offset', type=int, default=10000)
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='mdetr')
-    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--fool_model', type=str, default='tbd')
+    parser.add_argument('--seed', type=int, default=500)
     parser.add_argument('--repeat', type=int, default=10)
     parser.add_argument('--backend', type=str, help='states or pixels', default='states')
 

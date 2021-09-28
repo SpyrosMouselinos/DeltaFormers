@@ -523,9 +523,9 @@ class Re1nforceTrainer:
                 successes = 0
                 for i,v in enumerate(confusion_rewards.detach().cpu().numpy()):
                     if v == 1:
-                        name = (batch_idx % len(self.dataloader)) * self.batch_size + i
+                        name = (batch_idx % len(self.dataloader)) * self.batch_size + i + self.initial_example - 1
                         name = self.add_nulls(name, 6)
-                        pseudo_name = self.add_nulls(successes, 6)
+                        pseudo_name = self.add_nulls(i, 6)
                         self.print_over(name, f'./neural_render/images/CLEVR_Rendered_{pseudo_name}.png',
                                         ' '.join([index2q[f] for f in org_data['question'][i].cpu().numpy() if f != 0][1:-1]),
                                         index2a[y_real.to('cpu').numpy()[i, 0] + 4],
