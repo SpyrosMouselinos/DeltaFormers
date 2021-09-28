@@ -10,6 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
+from skimage.color import rgba2rgb
+from skimage.io import imread, imsave
 
 with open(f'{osp.abspath(".")}/data/vocab.json', 'r') as fin:
     parsed_json = json.load(fin)
@@ -84,7 +86,7 @@ class FFNet(nn.Module):
         self.input_size = input_size
         # Pre-Processing #
         self.fc1 = nn.Linear(input_size, input_size // 2)
-        #self.fc2 = nn.Linear(input_size // 2, input_size // 2)
+        # self.fc2 = nn.Linear(input_size // 2, input_size // 2)
         # self.fc3 = nn.Linear(input_size // 2, input_size // 2)
 
         self.obj1 = nn.Linear(input_size // 2, input_size // 6)
@@ -141,7 +143,7 @@ class FFNet(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x), inplace=True)
-        #x = F.relu(self.fc2(x), inplace=True)
+        # x = F.relu(self.fc2(x), inplace=True)
         # x = F.relu(self.fc3(x), inplace=True)
         obj1 = F.relu(self.obj1(x), inplace=True)
         obj1 = self.d1(obj1)
@@ -282,7 +284,7 @@ class PolicyNet(nn.Module):
         super(PolicyNet, self).__init__()
         self.input_size = input_size
         self.dropout = dropout
-        #self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
+        # self.question_model = QuestionReintroduce(input_size, hidden_size, reverse_input)
         self.final_model = FFNet(input_size, dropout)
         self.value_model = BVNet(input_size)
 
@@ -520,17 +522,34 @@ class Re1nforceTrainer:
                 epoch_accuracy_drop += batch_accuracy
                 epoch_confusion_drop += batch_confusion
 
-                successes = 0
-                for i,v in enumerate(confusion_rewards.detach().cpu().numpy()):
-                    if v == 1:
-                        name = (batch_idx % len(self.dataloader)) * self.batch_size + i + self.initial_example - 1
-                        name = self.add_nulls(name, 6)
-                        pseudo_name = self.add_nulls(i, 6)
-                        self.print_over(name, f'./neural_render/images/CLEVR_Rendered_{pseudo_name}.png',
-                                        ' '.join([index2q[f] for f in org_data['question'][i].cpu().numpy() if f != 0][1:-1]),
-                                        index2a[y_real.to('cpu').numpy()[i, 0] + 4],
-                                        index2a[predictions_after.to('cpu').numpy()[0] + 4])
-                        successes += 1
+                to_be_rendered_images = (
+                                                    invalid_scene_rewards.detach().cpu().numpy() == 0) * 1.0  # 1 = Rendered / 0 not rendered
+                to_be_correct_images = (
+                                                   confusion_rewards.detach().cpu().numpy() == 1) * 1.0  # 1= We Need it / 0 we dont
+                if to_be_correct_images.sum() > 1:
+                    images_to_take = []
+                    intra_batch_image_index = []
+                    k = 0
+                    l = 0
+                    for i, j in zip(to_be_rendered_images, to_be_correct_images):
+                        if i == 1:
+                            if j == 1:
+                                images_to_take.append(k)
+                                intra_batch_image_index.append(l)
+                            k += 1
+                        l += 1
+
+                    if len(images_to_take) > 0:
+                        for image, id in zip(images_to_take, intra_batch_image_index):
+                            name = (batch_idx % len(self.dataloader)) * self.batch_size + self.initial_example + id
+                            name = self.add_nulls(name  // 10, 6)
+                            pseudo_name = self.add_nulls(image, 6)
+                            self.print_over(name, f'./neural_render/images/CLEVR_Rendered_{pseudo_name}.png',
+                                            ' '.join([index2q[f] for f in org_data['question'][image].cpu().numpy() if f != 0][
+                                                     1:-1]),
+                                            index2a[y_real.to('cpu').numpy()[image, 0] + 4],
+                                            index2a[predictions_after.to('cpu').numpy()[0] + 4])
+
 
                 if patience == 0:
                     break
@@ -538,8 +557,6 @@ class Re1nforceTrainer:
             except KeyboardInterrupt:
                 _print("Handling Graceful Exit...\n")
                 break
-
-
 
         # fig1 = plt.figure(figsize=(10, 10))
         # plt.title(f'REINFORCE Epoch Consistency Drop on {self.fool_model_name}')
@@ -582,17 +599,14 @@ class Re1nforceTrainer:
                 q = q[:30] + '\n' + split_q(q[30:])
             return q
 
-        img = plt.imread(path)
-        plt.figure(figsize=(8, 8))
-        plt.grid(None)
-        plt.imshow(img)
-        #plt.text(0, 30, split_q(question), bbox=dict(fill=False, edgecolor='red', linewidth=1))
-        #plt.text(85, 15, split_q(oa), bbox=dict(fill=False, edgecolor='green', linewidth=1))
-        #plt.text(85, 35, split_q(ba), bbox=dict(fill=False, edgecolor='blue', linewidth=1))
-        #if aa is not None:
+        img = rgba2rgb(imread(path))
+        # plt.text(0, 30, split_q(question), bbox=dict(fill=False, edgecolor='red', linewidth=1))
+        # plt.text(85, 15, split_q(oa), bbox=dict(fill=False, edgecolor='green', linewidth=1))
+        # plt.text(85, 35, split_q(ba), bbox=dict(fill=False, edgecolor='blue', linewidth=1))
+        # if aa is not None:
         #    plt.text(85, 55, split_q(aa), bbox=dict(fill=False, edgecolor='yellow', linewidth=1))
-        plt.savefig(f'./results/images/{self.fool_model_name}/{index}_{self.fool_model_name}.png')
-        plt.close()
+        imsave(f'./results/images/{self.fool_model_name}/{index}_{self.fool_model_name}.png', img)
+
         with open(f'./results/images/{self.fool_model_name}/{index}_{self.fool_model_name}.txt', 'w') as fout:
             fout.write(question)
             fout.write('\n')
@@ -624,7 +638,10 @@ class Re1nforceTrainer:
                 features, org_data, y_real = self.game.extract_features(self.dataloader_iter)
                 print(batch_idx)
                 if self.predictions_before_pre_calc is not None:
-                    self.current_predictions_before = self.predictions_before_pre_calc[(batch_idx % len(self.dataloader)) * self.batch_size:((batch_idx % len(self.dataloader)) + 1) * self.batch_size]
+                    self.current_predictions_before = self.predictions_before_pre_calc[
+                                                      (batch_idx % len(self.dataloader)) * self.batch_size:((
+                                                                                                                        batch_idx % len(
+                                                                                                                    self.dataloader)) + 1) * self.batch_size]
                 else:
                     self.current_predictions_before = None
             except StopIteration:
@@ -656,9 +673,9 @@ class Re1nforceTrainer:
                         torch.softmax(torch.cat([f.unsqueeze(1) for f in sy], dim=1) / 10, dim=2))
 
                     actionsx = action_probs_x.sample()
-                    actionsx *= org_data['types'][:,0:10]
+                    actionsx *= org_data['types'][:, 0:10]
                     actionsy = action_probs_y.sample()
-                    actionsy *= org_data['types'][:,0:10]
+                    actionsy *= org_data['types'][:, 0:10]
 
                     action = torch.cat([actionsx, actionsy], dim=1)
                     # Calc Reward #

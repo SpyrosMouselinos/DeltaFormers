@@ -135,7 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=1)
+    parser.add_argument('--range', type=float, default=5)
     parser.add_argument('--model_load_from', type=str, default='None')
     # TODO: DELETE THIS
     # TODO: DELETE THIS
