@@ -5,6 +5,7 @@ import os.path as osp
 import sys
 from deltalogger.deltalogger import Deltalogger
 from reinforce_modules.utils import get_fool_model, get_visual_fool_model, ConfusionGame
+from utils.train_utils import MixCLEVR_HDF5, StateCLEVR, ImageCLEVR_HDF5
 
 sys.path.insert(0, osp.abspath('.'))
 import random
@@ -135,21 +136,32 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=5)
+    parser.add_argument('--range', type=float, default=1)
     parser.add_argument('--model_load_from', type=str, default='None')
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--randomize_range', type=str, default='False')
-    parser.add_argument('--range_offset', type=int, default=0)
+    parser.add_argument('--range_offset', type=int, default=5000)
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='tbd')
-    parser.add_argument('--seed', type=int, default=534)
+    parser.add_argument('--fool_model', type=str, default='sa')
+    parser.add_argument('--seed', type=int, default=51)
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--backend', type=str, help='states or pixels', default='states')
 
     args = parser.parse_args()
+
+
+    val_set = MixCLEVR_HDF5(config=None, split='Defense',
+                            clvr_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
+                            questions_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
+                            scenes_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
+                            use_cache=False,
+                            return_program=True,
+                            effective_range=None, output_shape=128, randomize_range=False,
+                            effective_range_offset=0)
+
 
     if args.backend == 'states':
         exp_name = 'DeltaFormers'

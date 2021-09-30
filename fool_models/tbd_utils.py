@@ -158,10 +158,13 @@ def sinference_with_tbh(model=None, resnet_extractor=None):
     program_generator.eval()
     execution_engine.type(dtype)
     execution_engine.eval()
-    img = imread('C:\\Users\\Guldan\\Desktop\\saveme.png')
-    question = 'Is there a big brown object of the same shape as the green thing ;'
-    question_l = [1, 10, 85, 14, 25, 30, 64, 66, 84, 74, 75, 21, 84, 45, 86, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    img = rgba2rgb(img)
+    img = imread('C:\\Users\\Guldan\\Desktop\\saveme3.png')
+    question = 'Is the shape of the brown rubber object the same as the thing that is left of the big object ;'
+    #question_l = [1, 10, 85, 14, 25, 30, 64, 66, 84, 74, 75, 21, 84, 45, 86, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    try:
+        img = rgba2rgb(img)
+    except:
+        pass
     img = imresize(img, (224,224))
     img = img.astype('float32')
     img = img.transpose(2, 0, 1)[None]
@@ -188,7 +191,7 @@ def sinference_with_tbh(model=None, resnet_extractor=None):
         correct_preds.append(execution_engine.translate_codes[item] - 4)
 
     print(correct_preds)
-    print(idx_to_answer_token(correct_preds))
+    print(idx_to_answer_token[correct_preds[0] + 4])
 
     return final_preds
 
