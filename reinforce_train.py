@@ -153,15 +153,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    val_set = MixCLEVR_HDF5(config=None, split='Defense',
-                            clvr_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
-                            questions_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
-                            scenes_path='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data',
-                            use_cache=False,
-                            return_program=True,
-                            effective_range=None, output_shape=128, randomize_range=False,
-                            effective_range_offset=0)
-
 
     if args.backend == 'states':
         exp_name = 'DeltaFormers'
