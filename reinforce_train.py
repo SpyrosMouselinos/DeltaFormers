@@ -136,7 +136,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, help='what kind of experiment to run', default=5e-4)
     parser.add_argument('--bs', type=int, help='what kind of experiment to run', default=10)
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
-    parser.add_argument('--range', type=float, default=1)
+    parser.add_argument('--range', type=float, default=0.01)
     parser.add_argument('--model_load_from', type=str, default='None')
     # TODO: DELETE THIS
     # TODO: DELETE THIS
@@ -145,7 +145,7 @@ if __name__ == '__main__':
     # TODO: DELETE THIS
     # TODO: DELETE THIS
     parser.add_argument('--mos_epoch', type=int, default=164)
-    parser.add_argument('--fool_model', type=str, default='sa')
+    parser.add_argument('--fool_model', type=str, default='mdetr')
     parser.add_argument('--seed', type=int, default=51)
     parser.add_argument('--repeat', type=int, default=1)
     parser.add_argument('--backend', type=str, help='states or pixels', default='states')
@@ -155,7 +155,7 @@ if __name__ == '__main__':
 
 
     if args.backend == 'states':
-        exp_name = 'DeltaFormers'
+        exp_name = 'DeltaFormersLong'
     elif args.backend == 'pixels':
         exp_name = 'DeltaFormersPixels'
     else:
