@@ -50,9 +50,9 @@ def load_loader():
                               scenes_path=f'{UP_TO_HERE_}/data',
                               use_cache=False,
                               return_program=False,
-                              effective_range=10, output_shape=224)
+                              effective_range=None, output_shape=224)
 
-    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=3,
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=256,
                                                  num_workers=0, shuffle=False, drop_last=False)
     return val_dataloader
 
@@ -127,8 +127,13 @@ def inference_with_tbh(loader=None, model=None, resnet_extractor=None):
             program = program_generator.reinforce_sample(questions_var[i, :].view(1, -1))
             progs.append(program.cpu().numpy().squeeze())
         progs = np.asarray(progs)
+        try:
+            scores = execution_engine(feats_var, torch.LongTensor(progs))
+        except RuntimeError:
+            print("WAIT!")
+            print(feats_var.size())
+            print(torch.LongTensor(progs).size())
 
-        scores = execution_engine(feats_var, torch.LongTensor(progs))
 
         _, preds = scores.data.cpu().max(1)
 
