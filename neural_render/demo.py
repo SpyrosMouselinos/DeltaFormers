@@ -1,6 +1,8 @@
 import argparse
 import math
 import os
+import sys
+
 import tqdm
 import itertools
 import random
@@ -107,7 +109,7 @@ def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=Fals
     if retry:
         choices = [1, 0.5, 0.2, -0.2, -0.5, 0, -1]
     else:
-        choices = [-5.5]
+        choices = [5]
     for jitter in choices:
         camera_jitter = [jitter] * n_possible_images
         xs = []
@@ -152,8 +154,9 @@ def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=Fals
                                                 per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
                                                 per_image_colors=colors, per_image_sizes=sizes,
                                                 per_image_materials=materials,
-                                                num_images=images_to_be_rendered, split='Defense', start_idx=custom_index,
+                                                num_images=images_to_be_rendered, split='Defense2', start_idx=custom_index,
                                                 workers=1)
+                sys.exit(1)
                 return assembled_images[0][1]
             else:
                 return 0
@@ -161,15 +164,18 @@ def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=Fals
 if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
     with open(f'{scenes_path}/{split}_dataset.pt', 'rb') as fin:
         info = pickle.load(fin)
-        x = info['x'][60]
-        y = info['y'][60]
+        x = info['x'][830]
+        y = info['y'][830]
 
 # to_render = [5180, 5360, 5410, 5720]
 # for i in to_render:
 #     state2img(x[i], custom_index=i // 10)
 
 # Mini Defense CLEVR #
-# Image Seed Validation 000006 #
+# Image Seed Validation 000006  000083#
+actionsx = torch.FloatTensor([0,0,0,0])
+actionsy = torch.FloatTensor([0,0,0,0])
+result = state2img(state=x, custom_index=0, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
 wizard = Wizard(2)
 wizard.restart(2)
 pbar = tqdm.tqdm(total=len(wizard.action_memory))
@@ -180,9 +186,11 @@ for i in range(len(wizard.action_memory)):
     actionsy = actionsy - 3
     actionsx = actionsx / 3.0
     actionsy = actionsy / 3.0
-    actionsx = torch.cat([torch.FloatTensor([0]), actionsx])
-    actionsy = torch.cat([torch.FloatTensor([0]), actionsy])
+    actionsx = torch.cat([torch.FloatTensor([0,0]), actionsx])
+    actionsy = torch.cat([torch.FloatTensor([0,0]), actionsy])
     #print(f"Trying {actionsx}, {actionsy}")
+    actionsx = torch.FloatTensor([0,0,0,0])
+    actionsy = torch.FloatTensor([0,0,0,0])
     result = state2img(state=x, custom_index=i, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
     if result == 1:
         wizard.register(i, [actionsx, actionsy])

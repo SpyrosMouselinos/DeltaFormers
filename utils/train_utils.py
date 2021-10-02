@@ -348,7 +348,8 @@ class ImageCLEVR_HDF5(Dataset):
                  effective_range_offset=0):
         if randomize_range:
             if effective_range is not None:
-                effective_range_offset = random.randint(0, 140_000 - effective_range)
+                print(effective_range)
+                effective_range_offset = random.randint(0, max(0,15560 - int(effective_range) - 1))
             else:
                 effective_range_offset = 0
         else:

@@ -1,11 +1,13 @@
-import numpy.random
-import torch.nn
 import os
 import os.path as osp
 import sys
+
+import numpy.random
+import torch.nn
+
 from deltalogger.deltalogger import Deltalogger
 from reinforce_modules.utils import get_fool_model, get_visual_fool_model, ConfusionGame
-from utils.train_utils import MixCLEVR_HDF5, StateCLEVR, ImageCLEVR_HDF5
+from utils.train_utils import StateCLEVR, ImageCLEVR_HDF5, MixCLEVR_HDF5
 
 sys.path.insert(0, osp.abspath('.'))
 import random
@@ -69,7 +71,8 @@ def PolicyEvaluation(args, seed=1, logger=None):
             range_offset = int(args.range_offset)
         else:
             range_offset = None
-        model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example = get_visual_fool_model(
+        model, (
+            model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example = get_visual_fool_model(
             device=args.device,
             load_from=load_from,
             scenes_path=args.scenes_path,
@@ -100,12 +103,10 @@ def PolicyEvaluation(args, seed=1, logger=None):
     else:
         raise ValueError
 
-
     if args.mode == 'visual':
         fool_model_name = args.fool_model
     else:
         fool_model_name = 'LinAttFormer'
-
 
     trainer = Re1nforceTrainer(model=model, game=rl_game, dataloader=val_dataloader, device=args.device, lr=args.lr,
                                train_duration=train_duration, batch_size=BS, name=effective_range_name,
@@ -138,12 +139,8 @@ if __name__ == '__main__':
     parser.add_argument('--mode', type=str, help='state | visual | imagenet', default='visual')
     parser.add_argument('--range', type=float, default=0.01)
     parser.add_argument('--model_load_from', type=str, default='None')
-    # TODO: DELETE THIS
-    # TODO: DELETE THIS
     parser.add_argument('--randomize_range', type=str, default='False')
-    parser.add_argument('--range_offset', type=int, default=5000)
-    # TODO: DELETE THIS
-    # TODO: DELETE THIS
+    parser.add_argument('--range_offset', type=int, default=0)
     parser.add_argument('--mos_epoch', type=int, default=164)
     parser.add_argument('--fool_model', type=str, default='mdetr')
     parser.add_argument('--seed', type=int, default=51)
@@ -151,7 +148,6 @@ if __name__ == '__main__':
     parser.add_argument('--backend', type=str, help='states or pixels', default='states')
 
     args = parser.parse_args()
-
 
 
     if args.backend == 'states':

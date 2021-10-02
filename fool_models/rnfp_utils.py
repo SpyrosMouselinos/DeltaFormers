@@ -67,15 +67,19 @@ def kwarg_dict_to_device(data_obj, device):
         cpy[key] = data_obj[key].to(device)
     return cpy
 
-def load_rnfp(model_path=None):
-    config = f'{UP_TO_HERE_}/results/experiment_fp/config.yaml'
+def load_rnfp(model_path=None, config_path=None):
+    if config_path is None:
+        config = f'{UP_TO_HERE_}/results/experiment_fp/config.yaml'
+    else:
+        config = f'{UP_TO_HERE_}/results/experiment_dfp/config.yaml'
+
     with open(config, 'r') as fin:
         config = yaml.load(fin, Loader=yaml.FullLoader)
     model = DeltaRNFP(config)
     if model_path is None:
         model = load(path=f'{UP_TO_HERE_}/results/experiment_fp/mos_epoch_219.pt', model=model)
     else:
-        model = load(path=model_path, model=model)
+        model = load(path=f'{UP_TO_HERE_}/results/experiment_dfp/model_at_{model_path}.pt', model=model)
     model.to('cuda')
     model.eval()
     return model

@@ -6,16 +6,18 @@ import math
 import os
 import os.path as osp
 import sys
+
 import numpy as np
 import torch.nn
 import torchvision.transforms
 import yaml
 from torch import optim
-from utils.train_utils import SGD_GC
+
 from fool_models.mdter_utils import load_mdetr, inference_with_mdetr
 from fool_models.rnfp_utils import load_rnfp, inference_with_rnfp, load_loader as load_loader_rnfp
 from fool_models.tbd_utils import load_resnet_backbone as load_resnet_tbd_backbone
 from fool_models.tbd_utils import load_tbd, inference_with_tbh
+from utils.train_utils import SGD_GC
 
 sys.path.insert(0, osp.abspath('.'))
 
@@ -352,6 +354,49 @@ def get_visual_fool_model(device, load_from=None, clvr_path='data/', questions_p
     return model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example
 
 
+def get_defense_visual_fool_model(device,
+                                  load_from=None,
+                                  clvr_path='data/',
+                                  questions_path='data/',
+                                  scenes_path='data/',
+                                  batch_size=128,
+                                  defense_level=None):
+    resnet = None
+    model_fool = load_rnfp()
+
+    if device == 'cuda':
+        device = 'cuda:0'
+
+    experiment_name = load_from.split('results/')[-1].split('/')[0]
+    config = f'./results/{experiment_name}/config.yaml'
+    with open(config, 'r') as fin:
+        config = yaml.load(fin, Loader=yaml.FullLoader)
+
+    model = AVAILABLE_MODELS[config['model_architecture']](config)
+    _print(f"Loading Model of type: {config['model_architecture']}\n")
+    model = load(path=load_from, model=model)
+
+    model = model.to(device)
+    model.eval()
+
+    val_set = MixCLEVR_HDF5(config=None, split='Defense',
+                            clvr_path=clvr_path,
+                            questions_path=questions_path,
+                            scenes_path=scenes_path,
+                            use_cache=False,
+                            return_program=True,
+                            effective_range=None, output_shape=128, randomize_range=False,
+                            effective_range_offset=0)
+
+    initial_example = val_set.effective_range_offset
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=batch_size,
+                                                 num_workers=0, shuffle=False, drop_last=False)
+    _print(f"Loader has : {len(val_dataloader)} batches\n")
+    _print(f"Calculating and storing answers of {defense_level} defense model!\n")
+    predictions_before_pre_calc = inference_with_rnfp(val_dataloader, model_fool, None)
+    return model, (model_fool, resnet), val_dataloader, predictions_before_pre_calc, initial_example
+
+
 def get_test_loader(load_from=None, clvr_path='data/', questions_path='data/', scenes_path='data/'):
     experiment_name = load_from.split('results/')[-1].split('/')[0]
     config = f'./results/{experiment_name}/config.yaml'
@@ -580,7 +625,8 @@ class ConfusionGame:
                     if self.backend == 'states':
                         _, _, y_feats = self.testbed_model(**data)
                     elif self.backend == 'pixels':
-                        _, _, y_feats = self.testbed_model(**{'image': self.downsizer(image_data['image']), 'question': image_data['question']})
+                        _, _, y_feats = self.testbed_model(
+                            **{'image': self.downsizer(image_data['image']), 'question': image_data['question']})
             else:
                 data = kwarg_dict_to_device(data, self.device)
                 _, _, y_feats = self.testbed_model(**data)
@@ -661,7 +707,7 @@ class ConfusionGame:
         if retry:
             choices = [1, 0.5, 0.2, -0.2, -0.5, 0, -1]
         else:
-            choices = [1]
+            choices = [-5.5]
         for jitter in choices:
             camera_jitter = [jitter] * n_possible_images
             xs = []

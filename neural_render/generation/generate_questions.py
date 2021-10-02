@@ -47,32 +47,32 @@ us to efficiently prune the search space and terminate early when we know that
 parser = argparse.ArgumentParser()
 
 # Inputs
-parser.add_argument('--input_scene_file', default='../scenes/CLEVR_Rendered_scenes.json',
+parser.add_argument('--input_scene_file', default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\CLEVR_Defense_scenes.json',
                     help="JSON file containing ground-truth scene information for all images ")
-parser.add_argument('--metadata_file', default='./metadata.json',
+parser.add_argument('--metadata_file', default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\metadata.json',
                     help="JSON file containing metadata about functions")
-parser.add_argument('--synonyms_json', default='./synonyms.json',
+parser.add_argument('--synonyms_json', default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\synonyms.json',
                     help="JSON file defining synonyms for parameter values")
-parser.add_argument('--template_dir', default='./CLEVR_1.0_templates',
+parser.add_argument('--template_dir', default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\neural_render\\generation\\CLEVR_1.0_templates',
                     help="Directory containing JSON templates for questions")
 
 # Output
 parser.add_argument('--output_questions_file',
-                    default='../questions/CLEVR_Rendered_questions.json',
+                    default='C:\\Users\\Guldan\\Desktop\\DeltaFormers\\datan\\CLEVR_Dendered_questions2.json',
                     help="The output file to write containing generated questions")
 
 # Control which and how many images to process
 parser.add_argument('--scene_start_idx', default=0, type=int,
                     help="The image at which to start generating questions; this allows " +
                          "question generation to be split across many workers")
-parser.add_argument('--num_scenes', default=5, type=int,
+parser.add_argument('--num_scenes', default=0, type=int,
                     help="The number of images for which to generate questions. Setting to 0 " +
                          "generates questions for all scenes in the input file starting from " +
                          "--scene_start_idx")
 
 # Control the number of questions per image; we will attempt to generate
 # templates_per_image * instances_per_template questions per image.
-parser.add_argument('--templates_per_image', default=100, type=int,
+parser.add_argument('--templates_per_image', default=1, type=int,
                     help="The number of different templates that should be instantiated " +
                          "on each image")
 parser.add_argument('--instances_per_template', default=1, type=int,
