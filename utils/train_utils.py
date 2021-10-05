@@ -147,7 +147,10 @@ def single_question_parser(question: dict, word_replace_dict: dict, q2index: dic
                 tokenized_q.append(q2index[word[:-1]])
                 tokenized_q.append(q2index[';'])
             else:
-                tokenized_q.append(q2index[word])
+                try:
+                    tokenized_q.append(q2index[word])
+                except KeyError:
+                    tokenized_q.append(3)
         q = torch.LongTensor(tokenized_q + [0] * (50 - len(tokenized_q))).view(50)
     if a2index is None:
         pass
@@ -345,7 +348,8 @@ class ImageCLEVR_HDF5(Dataset):
     def __init__(self, config=None, split='val', clvr_path='data/', questions_path='data/',
                  scenes_path=None, use_cache=False, return_program=False, effective_range=None, output_shape=None,
                  randomize_range=False,
-                 effective_range_offset=0):
+                 effective_range_offset=0, prior_shuffle=False, indicies=None):
+        self.indices = indicies
         if randomize_range:
             if effective_range is not None:
                 print(effective_range)
@@ -380,9 +384,26 @@ class ImageCLEVR_HDF5(Dataset):
             self.q2index = info['q2index']
             self.a2index = info['a2index']
             if effective_range is None:
-                self.x = info['x']
-                self.y = info['y']
+                if prior_shuffle:
+                    if self.indices is None:
+                        all_indexes = list(enumerate(list(range(len(info['x'])))))
+                        random.shuffle(all_indexes)
+                        self.indices, _ = zip(*all_indexes)
+                        self.indices = list(self.indices)
+                    self.x = [info['x'][j] for j in self.indices][int(effective_range_offset):]
+                    self.y = [info['y'][j] for j in self.indices][int(effective_range_offset):]
+                else:
+                    self.x = [info['x'][j] for j in self.indices]
+                    self.y = [info['x'][j] for j in self.indices]
             else:
+                if prior_shuffle:
+                    if self.indices is None:
+                        all_indexes = list(enumerate(list(range(len(info['x'])))))
+                        random.shuffle(all_indexes)
+                        self.indices, _ = zip(*all_indexes)
+                        self.indices = list(self.indices)
+                    self.x = [info['x'][j] for j in self.indices]
+                    self.y = [info['y'][j] for j in self.indices]
                 self.x = info['x'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
                 self.y = info['y'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
             if self.return_program:

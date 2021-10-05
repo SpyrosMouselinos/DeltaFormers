@@ -88,7 +88,7 @@ parser.add_argument('--margin', default=0.4, type=float,
                          "objects will be at least this distance apart. This makes resolving " +
                          "spatial relationships slightly less ambiguous.")
 
-parser.add_argument('--min_pixels_per_object', default=100, type=int,
+parser.add_argument('--min_pixels_per_object', default=1, type=int,
                     help="All objects will have at least this many visible pixels in the " +
                          "final rendered images; this ensures that no objects are fully " +
                          "occluded by other objects.")

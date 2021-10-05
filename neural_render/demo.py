@@ -22,8 +22,25 @@ warnings.filterwarnings("ignore", category=UserWarning)
 random.seed(666)
 np.random.seed(666)
 
-scenes_path = 'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data'
-split ='val'
+scenes_path = 'E:\\DeltaFormers\\data'
+
+
+def rotate(l, n):
+    return l[n:] + l[:n]
+
+
+def swap(n, tmp_x, tmp_y, tmp_z, tmp_sizes, tmp_shapes, tmp_colors, tmp_materials):
+    # Mini Swap #
+    tmp_x = [tmp_x[0], tmp_x[2], tmp_x[1]]
+    tmp_y = [tmp_y[0], tmp_y[2], tmp_y[1]]
+    tmp_x_1 = rotate(tmp_x, n)
+    tmp_y_1 = rotate(tmp_y, n)
+    tmp_z_1 = rotate(tmp_z, n)
+    tmp_sizes_1 = rotate(tmp_sizes, 0)
+    tmp_shapes_1 = rotate(tmp_shapes, 0)
+    tmp_colors_1 = rotate(tmp_colors, 0)
+    tmp_materials_1 = rotate(tmp_materials, 0)
+    return tmp_x_1, tmp_y_1, tmp_z_1, tmp_sizes_1, tmp_shapes_1, tmp_colors_1, tmp_materials_1
 
 
 def render_check(img_xs, img_ys, img_sizes, img_shapes):
@@ -88,7 +105,7 @@ class Wizard:
 
     def act(self, action_id):
         actions = self.action_memory[action_id]
-        actions_x = torch.LongTensor([f % self.n_dof  for f in actions])
+        actions_x = torch.LongTensor([f % self.n_dof for f in actions])
         actions_y = torch.LongTensor([f // self.n_dof for f in actions])
         return actions_x, actions_y
 
@@ -97,8 +114,13 @@ class Wizard:
         return
 
 
-
-def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=False, perturbations_x=None, perturbations_y=None):
+def state2img(state,
+              bypass=False,
+              custom_index=0,
+              delete_every=True,
+              retry=False,
+              perturbations_x=None,
+              perturbations_y=None):
     wr = []
     images_to_be_rendered = n_possible_images = 1
     n_objects_per_image = state['types'][:10].sum().item()
@@ -109,7 +131,7 @@ def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=Fals
     if retry:
         choices = [1, 0.5, 0.2, -0.2, -0.5, 0, -1]
     else:
-        choices = [5]
+        choices = [0]
     for jitter in choices:
         camera_jitter = [jitter] * n_possible_images
         xs = []
@@ -129,15 +151,26 @@ def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=Fals
             tmp_materials = []
             tmp_sizes = []
             for object_idx in range(n_objects_per_image):
-                tmp_x.append((state['object_positions'][object_idx].numpy()[0] * 3 + perturbations_x[object_idx]).clip(-2.98,2.98).item())
-                tmp_y.append((state['object_positions'][object_idx].numpy()[1] * 3 + perturbations_y[object_idx]).clip(-2.98,2.98).item())
+                tmp_x.append(
+                    (state['object_positions'][object_idx].numpy()[0] * 3 + perturbations_x[object_idx]).clip(-2.98,
+                                                                                                              2.98).item())
+                tmp_y.append(
+                    (state['object_positions'][object_idx].numpy()[1] * 3 + perturbations_y[object_idx]).clip(-2.98,
+                                                                                                              2.98).item())
                 tmp_z.append(state['object_positions'][object_idx].numpy()[2] * 360)
                 tmp_colors.append(state['object_colors'][object_idx].item() - 1)
                 tmp_shapes.append(state['object_shapes'][object_idx].item() - 1)
                 tmp_materials.append(state['object_materials'][object_idx].item() - 1)
                 tmp_sizes.append(state['object_sizes'][object_idx].item() - 1)
 
-            if render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes):
+            if render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes) or True:
+                # i = 1
+                # tmp_x_, tmp_y_, tmp_z_, tmp_sizes_, tmp_shapes_, tmp_colors_, tmp_materials_ = swap(i, tmp_x, tmp_y,
+                #                                                                                     tmp_z,
+                #                                                                                     tmp_sizes,
+                #                                                                                     tmp_shapes,
+                #                                                                                     tmp_colors,
+                #                                                                                     tmp_materials)
                 xs.append(tmp_x)
                 ys.append(tmp_y)
                 zs.append(tmp_z)
@@ -148,61 +181,91 @@ def state2img(state, bypass=False, custom_index=0, delete_every=True, retry=Fals
                 questions.append(state['question'][image_idx])
                 wr.append(image_idx)
 
-
-                assembled_images = render_image(key_light_jitter=key_light_jitter, fill_light_jitter=fill_light_jitter,
+                assembled_images = render_image(key_light_jitter=key_light_jitter,
+                                                fill_light_jitter=fill_light_jitter,
                                                 back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,
-                                                per_image_x=xs, per_image_y=ys, per_image_theta=zs, per_image_shapes=shapes,
+                                                per_image_x=xs, per_image_y=ys, per_image_theta=zs,
+                                                per_image_shapes=shapes,
                                                 per_image_colors=colors, per_image_sizes=sizes,
                                                 per_image_materials=materials,
-                                                num_images=images_to_be_rendered, split='Defense2', start_idx=custom_index,
+                                                num_images=images_to_be_rendered, split='Defense2',
+                                                start_idx=custom_index,
                                                 workers=1)
-                sys.exit(1)
                 return assembled_images[0][1]
             else:
                 return 0
 
-if osp.exists(f'{scenes_path}/{split}_dataset.pt'):
-    with open(f'{scenes_path}/{split}_dataset.pt', 'rb') as fin:
-        info = pickle.load(fin)
-        x = info['x'][830]
-        y = info['y'][830]
+
+split = 'Defense3'
+# if osp.exists(f'{scenes_path}/val_dataset.pt'):
+#     with open(f'{scenes_path}/val_dataset.pt', 'rb') as fin:
+#         info = pickle.load(fin)
+#         x = info['x'][60]
 
 # to_render = [5180, 5360, 5410, 5720]
 # for i in to_render:
 #     state2img(x[i], custom_index=i // 10)
 
 # Mini Defense CLEVR #
-# Image Seed Validation 000006  000083#
+# Image Seed Validation 000006#
+
+x = {'positions': torch.LongTensor([ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  3,  4,  5,  6,  7,  8,
+          9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+         27, 28,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0]),
+ 'types': torch.LongTensor([1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+ 'object_positions': torch.FloatTensor([[ 0.5,  0.5,  0.0019],
+         [ -1,  -2,  0.0000],
+         [ -0.5,  -0.5,  0.0000],
+         [ 1,  1,  1.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000],
+         [ 0.0000,  0.0000,  0.0000]]),
+ 'object_colors': torch.LongTensor([3, 2, 4, 5, 0, 0, 0, 0, 0, 0]),
+ 'object_shapes': torch.LongTensor([1, 2, 3, 1, 0, 0, 0, 0, 0, 0]),
+ 'object_materials': torch.LongTensor([2, 1, 2, 1, 0, 0, 0, 0, 0, 0]),
+ 'object_sizes': torch.LongTensor([1, 1, 2, 2, 0, 0, 0, 0, 0, 0]),
+ 'question': torch.LongTensor([ 1, 13, 50, 84, 58, 66, 84, 86, 83, 50, 54, 66, 84, 28, 26, 16, 67, 84,
+         72, 77, 66, 84, 25, 45, 59, 26,  5,  2,  0,  0,  0,  0,  0,  0,  0,  0,
+          0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0])}
+
 actionsx = torch.FloatTensor([0,0,0,0])
 actionsy = torch.FloatTensor([0,0,0,0])
-result = state2img(state=x, custom_index=0, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
-wizard = Wizard(2)
-wizard.restart(2)
-pbar = tqdm.tqdm(total=len(wizard.action_memory))
-created = 0
-for i in range(len(wizard.action_memory)):
-    actionsx, actionsy = wizard.act(i)
-    actionsx = actionsx - 3
-    actionsy = actionsy - 3
-    actionsx = actionsx / 3.0
-    actionsy = actionsy / 3.0
-    actionsx = torch.cat([torch.FloatTensor([0,0]), actionsx])
-    actionsy = torch.cat([torch.FloatTensor([0,0]), actionsy])
-    #print(f"Trying {actionsx}, {actionsy}")
-    actionsx = torch.FloatTensor([0,0,0,0])
-    actionsy = torch.FloatTensor([0,0,0,0])
-    result = state2img(state=x, custom_index=i, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
-    if result == 1:
-        wizard.register(i, [actionsx, actionsy])
-        created += 1
-    pbar.update(1)
-    pbar.set_postfix({'Images Created so Far': created})
-pbar.close()
+result = state2img(state=x, custom_index=1, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
 
 
+#wizard = Wizard(2)
+#wizard.restart(2)
+#pbar = tqdm.tqdm(total=len(wizard.action_memory))
+#created = 0
+# Create 10% of perturbations for each image #
+#ppi = int(0.1 * len(wizard.action_memory))
 
-
-
+#items = random.sample(range(0, len(wizard.action_memory) - 1), ppi)
+# for i in items:
+#     actionsx, actionsy = wizard.act(i)
+#     actionsx = actionsx - 3
+#     actionsy = actionsy - 3
+#     actionsx = actionsx / 3.0
+#     actionsy = actionsy / 3.0
+#     actionsx = torch.cat([torch.FloatTensor([0,0,0,0]), actionsx])
+#     actionsy = torch.cat([torch.FloatTensor([0,0,0,0]), actionsy])
+#     result = state2img(state=x, custom_index=i, delete_every=False, retry=False, perturbations_x=actionsx,
+#                        perturbations_y=actionsy)
+#     if result == 1:
+#         wizard.register(i, [actionsx, actionsy])
+#         created += 1
+#     pbar.update(1)
+#     pbar.set_postfix({'Images Created so Far': created})
+#     if created == 100:
+#         break
+# pbar.close()
 
 
 def generate_images(max_images=2, batch_size=2, max_episodes=1, workers=1):
@@ -256,7 +319,6 @@ def generate_images(max_images=2, batch_size=2, max_episodes=1, workers=1):
     print(f"Images per second {ips}")
     print(f"Generator Success Rate: {round(global_generation_success_rate / (max_episodes * batch_size), 2)}")
     return duration
-
 
 # if __name__ == '__main__':
 #     parser = argparse.ArgumentParser()

@@ -13,7 +13,7 @@ import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5
-
+from fool_models.film_utils import load_film, load_resnet_backbone
 
 def _print(something):
     print(something, flush=True)
@@ -121,9 +121,9 @@ def accuracy_metric(y_pred, y_true):
 def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
                 questions_path='data/', scenes_path='data/', use_cache=False, use_hdf5=False,
                 freeze_exponential_growth=False, train_percentage=20, random_seed=0):
+    effective_range = int(4200 * (train_percentage / 100))
     random.seed(random_seed)
     np.random.seed(random_seed)
-    effective_range = 15560 * train_percentage / 100
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -137,33 +137,56 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     # with open(config, 'r') as fin:
     #     config = yaml.load(fin, Loader=yaml.FullLoader)
 
-    model = AVAILABLE_MODELS[config['model_architecture']](config)
-    #_print(f"Loading Model of type: {config['model_architecture']}\n")
-    #model, _, _, _, _ = load(path=load_from, model=model, mode='model')
-    model = model.to(device)
-    model.train()
+    #model = AVAILABLE_MODELS[config['model_architecture']](config)
+    # _print(f"Loading Model of type: {config['model_architecture']}\n")
+    # model, _, _, _, _ = load(path=load_from, model=model, mode='model')
+    resnet = load_resnet_backbone()
+    resnet.eval()
+    program_generator, execution_engine = load_film()
+    program_generator = program_generator.to(device)
+    execution_engine = execution_engine.to(device)
+    program_generator.train()
+    execution_engine.train()
 
-    train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense',
+    # train_idx = []
+    # test_idx = []
+    # for i in range(0, 7):
+    #     nr = (700 * i, 700 * (i + 1))
+    #     nrr = list(range(nr))
+    #     for k, j in enumerate(nrr):
+    #         if k <= 7 * train_percentage:
+    #             train_idx.append(j)
+    #         else:
+    #             test_idx.append(j)
+
+    train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense2',
                                                                     clvr_path=clvr_path,
                                                                     questions_path=questions_path,
                                                                     scenes_path=scenes_path,
-                                                                    use_cache=use_cache, return_program=True,
+                                                                    use_cache=use_cache, return_program=False,
                                                                     effective_range_offset=0,
-                                                                    randomize_range=True,
-                                                                    effective_range=effective_range)
+                                                                    randomize_range=False,
+                                                                    effective_range=effective_range,
+                                                                    prior_shuffle=False, output_shape=224)
+    shuffle_order = train_set.indices
 
-    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=32, shuffle=True)
+    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=4, shuffle=True)
 
-    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense',
+    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense2',
                                                                   clvr_path=clvr_path,
                                                                   questions_path=questions_path,
                                                                   scenes_path=scenes_path, use_cache=use_cache,
-                                                                  return_program=True,
+                                                                  return_program=False,
                                                                   effective_range_offset=effective_range,
-                                                                  randomize_range=False, effective_range=None)
+                                                                  randomize_range=False, effective_range=None,
+                                                                  prior_shuffle=True, indicies=shuffle_order, output_shape=224)
 
-    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=32, shuffle=False)
-    optimizer = torch.optim.AdamW(params=model.parameters(), lr=1e-3, weight_decay=1e-4)
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=1, shuffle=False)
+    optimizer1 = torch.optim.AdamW(params=program_generator.parameters(), lr=1e-4, weight_decay=1e-4)
+    optimizer2 = torch.optim.AdamW(params=execution_engine.parameters(), lr=1e-4, weight_decay=1e-4)
+
+    print(len(train_dataloader) * 16)
+    print(len(val_dataloader) * 16)
 
     init_epoch = 0
 
@@ -174,14 +197,43 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     total_acc = 0.
     best_val_acc = -1
     overfit_count = -3
-    optimizer.zero_grad()
+    optimizer1.zero_grad()
+    optimizer2.zero_grad()
     flag = False
     log_interval = 1000
     running_train_batch_index = 0
-    for epoch in range(init_epoch, 500):
-        if flag and epoch > 300:
-            break
+    for epoch in range(init_epoch, 20):
         _print(f"Epoch: {epoch}\n")
+        if flag:
+            _print(
+                f"Validating at Epoch: {epoch} and Total Batch Index {running_train_batch_index}\n")
+            total_val_loss = 0.
+            total_val_acc = 0.
+            # Turn off the train mode #
+            program_generator.eval()
+            execution_engine.eval()
+            with torch.no_grad():
+                for val_batch_index, val_batch in enumerate(val_dataloader):
+                    data, y_real = val_batch
+                    data = kwarg_dict_to_device(data, device)
+                    y_real = y_real.to(device)
+                    feats = resnet(data['image'])
+                    programs = program_generator(data['question'])
+                    y_pred = execution_engine(feats, programs)
+                    val_loss = criterion(y_pred, y_real.squeeze(1))
+                    val_acc = metric(y_pred, y_real.squeeze(1))
+                    total_val_loss += val_loss.item()
+                    total_val_acc += val_acc
+            _print('| epoch {:3d} | val loss {:5.2f} | val acc {:5.2f} \n'.format(epoch,
+                                                                                  total_val_loss / (
+                                                                                          val_batch_index + 1),
+                                                                                  total_val_acc / (
+                                                                                          val_batch_index + 1)))
+            if total_val_acc / (val_batch_index + 1) > best_val_acc:
+                best_val_acc = total_val_acc / (val_batch_index + 1)
+            print(f"Final Results for {train_percentage} Percentage!\n")
+            print(best_val_acc)
+            return
         for train_batch_index, train_batch in enumerate(train_dataloader):
             if running_train_batch_index % 500 == 0 and running_train_batch_index > 0:
                 _print(
@@ -189,13 +241,16 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                 total_val_loss = 0.
                 total_val_acc = 0.
                 # Turn off the train mode #
-                model.eval()
+                execution_engine.eval()
+                program_generator.eval()
                 with torch.no_grad():
                     for val_batch_index, val_batch in enumerate(val_dataloader):
                         data, y_real = val_batch
                         data = kwarg_dict_to_device(data, device)
                         y_real = y_real.to(device)
-                        y_pred, att, _ = model(**data)
+                        feats = resnet(data['image'])
+                        programs = program_generator(data['question'])
+                        y_pred = execution_engine(feats, programs)
                         val_loss = criterion(y_pred, y_real.squeeze(1))
                         val_acc = metric(y_pred, y_real.squeeze(1))
                         total_val_loss += val_loss.item()
@@ -215,24 +270,27 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                     if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
                         _print(f"Training stopped at epoch: {epoch} and best validation acc: {best_val_acc}")
                         return
-                model.train()
+                program_generator.train()
+                execution_engine.train()
 
             else:
                 # Turn on the train mode #
                 data, y_real = train_batch
                 data = kwarg_dict_to_device(data, device)
                 y_real = y_real.to(device)
-
-                y_pred, att, _ = model(**data)
+                feats = resnet(data['image'])
+                programs = program_generator(data['question'])
+                y_pred = execution_engine(feats, programs)
                 loss = criterion(y_pred, y_real.squeeze(1))
                 acc = metric(y_pred, y_real.squeeze(1))
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), config['clip_grad_norm'])
-                optimizer.step()
-                optimizer.zero_grad()
+                optimizer1.step()
+                optimizer2.step()
+                optimizer1.zero_grad()
+                optimizer2.zero_grad()
                 total_loss += loss.item()
                 total_acc += acc
-                if train_batch_index % 100 == 0 and train_batch_index > 0:
+                if train_batch_index % int(len(train_dataloader) / 2) == 0 and train_batch_index > 0:
                     cur_loss = total_loss / (train_batch_index + 1)
                     cur_acc = total_acc / (train_batch_index + 1)
                     _print('| epoch {:3d} | {:5d}/{:5d} batches | '
@@ -249,9 +307,9 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         total_loss = 0.
         total_acc = 0.
 
-    # with open(f'C:\\Users\\Guldan\\Desktop\\exp_fold\\percentage_{train_percentage}_{random_seed}.txt', 'w') as fout:
-    #     fout.write('GAME\n')
-    #     fout.write(str(best_val_acc))
+    with open(f'C:\\Users\\Spyros\\Desktop\\forfucksake\\film_percentage_{train_percentage}_{random_seed}.txt', 'w') as fout:
+        fout.write('GAME\n')
+        fout.write(str(best_val_acc))
     print(f"Final Results for {train_percentage} Percentage!\n")
     print(best_val_acc)
     return
@@ -290,12 +348,19 @@ if __name__ == '__main__':
         args.use_hdf5 = False
     else:
         args.use_hdf5 = True
-
-    for train_percentage in [50, 30, 20, 10, 5, 1]:
-        random_seed = 0
+        # StateCLEVR(config=None, split='Defense2', scenes_path='E:\\DeltaFormers\\data', questions_path='E:\\DeltaFormers\\data',
+        #                            clvr_path='E:\\DeltaFormers\\data', use_cache=False, return_program=False,
+        #                            effective_range=None, effective_range_offset=0)
+        # ImageCLEVR_HDF5(config=None, split='Defense2', clvr_path='E:\\DeltaFormers\\data', questions_path='E:\\DeltaFormers\\data',
+        #                                 scenes_path='E:\\DeltaFormers\\data', use_cache=False, return_program=False,
+        #                                 effective_range=None, output_shape=224,
+        #                                 effective_range_offset=0)
+        # sys.exit(1)
+    #for run in range(0, 20):
+    for train_percentage in [10, 50, 70]:
         train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                     scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
                     use_cache=args.use_cache, use_hdf5=args.use_hdf5,
                     freeze_exponential_growth=args.freeze_exponential_growth,
                     train_percentage=train_percentage,
-                    random_seed=random_seed)
+                    random_seed=train_percentage + 0)
