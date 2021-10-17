@@ -301,7 +301,7 @@ def command_template(num_images,
       --output_image_dir={output_image_dir} \
       --output_scene_dir={output_scene_dir} \
       --output_scene_file={output_scene_file} \
-      --use_gpu=1 --render_num_samples=512 --width=800 --height=600 --start_idx={start_idx}'
+      --use_gpu=1 --render_num_samples=128 --width=224 --height=224 --start_idx={start_idx}'
     return cmd_template
 
 

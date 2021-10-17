@@ -526,29 +526,30 @@ class Re1nforceTrainer:
                                                     invalid_scene_rewards.detach().cpu().numpy() == 0) * 1.0  # 1 = Rendered / 0 not rendered
                 to_be_correct_images = (
                                                    confusion_rewards.detach().cpu().numpy() == 1) * 1.0  # 1= We Need it / 0 we dont
-                # if to_be_correct_images.sum() > 1:
-                #     images_to_take = []
-                #     intra_batch_image_index = []
-                #     k = 0
-                #     l = 0
-                #     for i, j in zip(to_be_rendered_images, to_be_correct_images):
-                #         if i == 1:
-                #             if j == 1:
-                #                 images_to_take.append(k)
-                #                 intra_batch_image_index.append(l)
-                #             k += 1
-                #         l += 1
-                #
-                #     if len(images_to_take) > 0:
-                #         for image, id in zip(images_to_take, intra_batch_image_index):
-                #             name = (batch_idx % len(self.dataloader)) * self.batch_size + self.initial_example + id
-                #             name = self.add_nulls(name  // 10, 6)
-                #             pseudo_name = self.add_nulls(image, 6)
-                #             self.print_over(name, f'./neural_render/images/CLEVR_Rendered_{pseudo_name}.png',
-                #                             ' '.join([index2q[f] for f in org_data['question'][image].cpu().numpy() if f != 0][
-                #                                      1:-1]),
-                #                             index2a[y_real.to('cpu').numpy()[image, 0] + 4],
-                #                             index2a[predictions_after.to('cpu').numpy()[0] + 4])
+                if to_be_correct_images.sum() > 1:
+                    images_to_take = []
+                    intra_batch_image_index = []
+                    k = 0
+                    l = 0
+                    for i, j in zip(to_be_rendered_images, to_be_correct_images):
+                        if i == 1:
+                            if j == 1:
+                                images_to_take.append(k)
+                                intra_batch_image_index.append(l)
+                            k += 1
+                        l += 1
+
+                    if len(images_to_take) > 0:
+                        for image, id in zip(images_to_take, intra_batch_image_index):
+                            if y_real[image,0] != predictions_after[image]:
+                                name = (batch_idx % len(self.dataloader)) * self.batch_size + self.initial_example + id
+                                name = self.add_nulls(name  // 10, 6)
+                                pseudo_name = self.add_nulls(image, 6)
+                                self.print_over(name, f'./neural_render/images/CLEVR_Rendered_{pseudo_name}.png',
+                                                ' '.join([index2q[f] for f in org_data['question'][image].cpu().numpy() if f != 0][
+                                                         1:-1]),
+                                                index2a[y_real.to('cpu').numpy()[image, 0] + 4],
+                                                index2a[predictions_after.to('cpu').numpy()[0] + 4])
 
 
                 if patience == 0:
