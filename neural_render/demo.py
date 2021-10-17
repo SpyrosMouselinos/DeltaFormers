@@ -197,16 +197,16 @@ def state2img(state,
 
 
 split = 'Defense3'
-if osp.exists(f'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\val_dataset.pt'):
-    with open(f'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\\\val_dataset.pt', 'rb') as fin:
+if osp.exists(f'{scenes_path}/val_dataset.pt'):
+    with open(f'{scenes_path}/val_dataset.pt', 'rb') as fin:
         info = pickle.load(fin)
         x = info['x']
 
-actionsx = torch.FloatTensor([0,0,0,0,0,0])
-actionsy = torch.FloatTensor([0,0,0,0,0,0])
-to_render = [ 6490]
+to_render = [1200 ,1280]
+actionsx = torch.FloatTensor([0,0,0,0,0,0,0,0,0])
+actionsy = torch.FloatTensor([0,0,0,0,0,0,0,0,0])
 for i in to_render:
-    state2img(x[i], custom_index=i // 10, perturbations_x=actionsx, perturbations_y=actionsy)
+    state2img(x[i], custom_index=i // 10, perturbations_y=actionsy, perturbations_x=actionsx)
 
 # Mini Defense CLEVR #
 # Image Seed Validation 000006#
@@ -236,9 +236,9 @@ for i in to_render:
 #  'question': torch.LongTensor([ 1, 13, 50, 84, 58, 66, 84, 86, 83, 50, 54, 66, 84, 28, 26, 16, 67, 84,
 #          72, 77, 66, 84, 25, 45, 59, 26,  5,  2,  0,  0,  0,  0,  0,  0,  0,  0,
 #           0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0])}
+#
 
-
-#result = state2img(state=x, custom_index=1, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
+result = state2img(state=x, custom_index=1, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
 
 
 #wizard = Wizard(2)
