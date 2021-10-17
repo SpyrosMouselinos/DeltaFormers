@@ -13,7 +13,7 @@ import argparse
 from torch.utils.data import Dataset
 from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5
-from fool_models.film_utils import load_film, load_resnet_backbone
+from fool_models.tbd_utils import load_tbd, load_resnet_backbone
 
 def _print(something):
     print(something, flush=True)
@@ -142,10 +142,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     # model, _, _, _, _ = load(path=load_from, model=model, mode='model')
     resnet = load_resnet_backbone()
     resnet.eval()
-    program_generator, execution_engine = load_film()
+    program_generator, execution_engine = load_tbd()
     program_generator = program_generator.to(device)
     execution_engine = execution_engine.to(device)
-    program_generator.train()
+    program_generator.eval()
     execution_engine.train()
 
     # train_idx = []
@@ -170,7 +170,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                     prior_shuffle=False, output_shape=224)
     shuffle_order = train_set.indices
 
-    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=4, shuffle=True)
+    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=2, shuffle=True)
 
     val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense2',
                                                                   clvr_path=clvr_path,
@@ -181,12 +181,12 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                                                                   randomize_range=False, effective_range=None,
                                                                   prior_shuffle=True, indicies=shuffle_order, output_shape=224)
 
-    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=1, shuffle=False)
-    optimizer1 = torch.optim.AdamW(params=program_generator.parameters(), lr=1e-4, weight_decay=1e-4)
-    optimizer2 = torch.optim.AdamW(params=execution_engine.parameters(), lr=1e-4, weight_decay=1e-4)
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=2, shuffle=False)
+    optimizer1 = torch.optim.AdamW(params=execution_engine.parameters(), lr=1e-5, weight_decay=1e-5)
+    #optimizer2 = torch.optim.AdamW(params=execution_engine.parameters(), lr=1e-4, weight_decay=1e-4)
 
-    print(len(train_dataloader) * 16)
-    print(len(val_dataloader) * 16)
+    print(len(train_dataloader) * 2)
+    print(len(val_dataloader) * 2)
 
     init_epoch = 0
 
@@ -198,7 +198,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     best_val_acc = -1
     overfit_count = -3
     optimizer1.zero_grad()
-    optimizer2.zero_grad()
+    #optimizer2.zero_grad()
     flag = False
     log_interval = 1000
     running_train_batch_index = 0
@@ -210,7 +210,6 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
             total_val_loss = 0.
             total_val_acc = 0.
             # Turn off the train mode #
-            program_generator.eval()
             execution_engine.eval()
             with torch.no_grad():
                 for val_batch_index, val_batch in enumerate(val_dataloader):
@@ -218,8 +217,13 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                     data = kwarg_dict_to_device(data, device)
                     y_real = y_real.to(device)
                     feats = resnet(data['image'])
-                    programs = program_generator(data['question'])
-                    y_pred = execution_engine(feats, programs)
+                    progs = []
+                    for i in range(data['question'].size(0)):
+                        program = program_generator.reinforce_sample(data['question'][i, :].view(1, -1))
+                        progs.append(program.cpu().numpy().squeeze())
+                    progs = np.asarray(progs)
+
+                    y_pred = execution_engine(feats, torch.LongTensor(progs))
                     val_loss = criterion(y_pred, y_real.squeeze(1))
                     val_acc = metric(y_pred, y_real.squeeze(1))
                     total_val_loss += val_loss.item()
@@ -235,7 +239,7 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
             print(best_val_acc)
             return
         for train_batch_index, train_batch in enumerate(train_dataloader):
-            if running_train_batch_index % 500 == 0 and running_train_batch_index > 0:
+            if running_train_batch_index % 1000 == 0 and running_train_batch_index > 0:
                 _print(
                     f"Validating at Epoch: {epoch} and Total Batch Index {running_train_batch_index}\n")
                 total_val_loss = 0.
@@ -249,8 +253,13 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                         data = kwarg_dict_to_device(data, device)
                         y_real = y_real.to(device)
                         feats = resnet(data['image'])
-                        programs = program_generator(data['question'])
-                        y_pred = execution_engine(feats, programs)
+                        progs = []
+                        for i in range(data['question'].size(0)):
+                            program = program_generator.reinforce_sample(data['question'][i, :].view(1, -1))
+                            progs.append(program.cpu().numpy().squeeze())
+                        progs = np.asarray(progs)
+
+                        y_pred = execution_engine(feats, torch.LongTensor(progs))
                         val_loss = criterion(y_pred, y_real.squeeze(1))
                         val_acc = metric(y_pred, y_real.squeeze(1))
                         total_val_loss += val_loss.item()
@@ -270,7 +279,6 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                     if overfit_count % config['early_stopping'] == 0 and overfit_count > 0:
                         _print(f"Training stopped at epoch: {epoch} and best validation acc: {best_val_acc}")
                         return
-                program_generator.train()
                 execution_engine.train()
 
             else:
@@ -279,15 +287,18 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
                 data = kwarg_dict_to_device(data, device)
                 y_real = y_real.to(device)
                 feats = resnet(data['image'])
-                programs = program_generator(data['question'])
-                y_pred = execution_engine(feats, programs)
+                progs = []
+                for i in range(data['question'].size(0)):
+                    program = program_generator.reinforce_sample(data['question'][i, :].view(1, -1))
+                    progs.append(program.cpu().numpy().squeeze())
+                progs = np.asarray(progs)
+
+                y_pred = execution_engine(feats, torch.LongTensor(progs))
                 loss = criterion(y_pred, y_real.squeeze(1))
                 acc = metric(y_pred, y_real.squeeze(1))
                 loss.backward()
                 optimizer1.step()
-                optimizer2.step()
                 optimizer1.zero_grad()
-                optimizer2.zero_grad()
                 total_loss += loss.item()
                 total_acc += acc
                 if train_batch_index % int(len(train_dataloader) / 2) == 0 and train_batch_index > 0:
@@ -357,7 +368,7 @@ if __name__ == '__main__':
         #                                 effective_range_offset=0)
         # sys.exit(1)
     #for run in range(0, 20):
-    for train_percentage in [10, 50, 70]:
+    for train_percentage in [90]:
         train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
                     scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
                     use_cache=args.use_cache, use_hdf5=args.use_hdf5,

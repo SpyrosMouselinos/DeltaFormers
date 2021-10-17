@@ -83,7 +83,7 @@ def load_program_generator(path):
     state = checkpoint['program_generator_state']
     kwargs = get_updated_args(kwargs, FiLMGen)
     model = FiLMGen(**kwargs)
-    #model.load_state_dict(state)
+    model.load_state_dict(state)
     return model, kwargs
 
 
@@ -94,7 +94,7 @@ def load_execution_engine(path, verbose=False):
     kwargs['verbose'] = verbose
     kwargs = get_updated_args(kwargs, FiLMedNet)
     model = FiLMedNet(**kwargs)
-    #model.load_state_dict(state)
+    model.load_state_dict(state)
     return model, kwargs
 
 

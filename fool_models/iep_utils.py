@@ -61,7 +61,7 @@ def load_program_generator(path):
     kwargs = checkpoint['program_generator_kwargs']
     state = checkpoint['program_generator_state']
     model = Seq2Seq(**kwargs)
-    model.load_state_dict(state)
+    #model.load_state_dict(state)
     return model, kwargs
 
 
@@ -71,16 +71,16 @@ def load_execution_engine(path, verbose=True):
     state = checkpoint['execution_engine_state']
     kwargs['verbose'] = verbose
     model = ModuleNet(**kwargs)
-    model.load_state_dict(state)
+    #model.load_state_dict(state)
     return model, kwargs
 
 
 def load_iep(program_generator=f'{UP_TO_HERE_}/fool_models/resources/program_generator_700k.pt',
              execution_engine=f'{UP_TO_HERE_}/fool_models/resources/execution_engine_700k_strong.pt'):
     program_generator, _ = load_program_generator(program_generator)
-    program_generator.eval()
+    #program_generator.eval()
     execution_engine, _ = load_execution_engine(execution_engine, verbose=False)
-    execution_engine.eval()
+    #execution_engine.eval()
     model = (program_generator, execution_engine)
     return model
 

@@ -383,6 +383,18 @@ class ImageCLEVR_HDF5(Dataset):
             self.split = info['split']
             self.q2index = info['q2index']
             self.a2index = info['a2index']
+            final_x = []
+            final_y = []
+            for x,y in zip(info['x'], info['y']):
+                if 3 in [f for f in x['question']]:
+                    pass
+                else:
+                    final_x.append(x)
+                    final_y.append(y)
+            info = {
+                'x':final_x,
+                'y':final_y
+            }
             if effective_range is None:
                 if prior_shuffle:
                     if self.indices is None:

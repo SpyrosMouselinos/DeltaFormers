@@ -124,8 +124,8 @@ def state2img(state,
     wr = []
     images_to_be_rendered = n_possible_images = 1
     n_objects_per_image = state['types'][:10].sum().item()
-    assert len(perturbations_x) == len(perturbations_y)
-    assert len(perturbations_x) == n_objects_per_image
+    #assert len(perturbations_x) == len(perturbations_y)
+    #assert len(perturbations_x) == n_objects_per_image
 
     key_light_jitter = fill_light_jitter = back_light_jitter = [0.5] * n_possible_images
     if retry:
@@ -197,47 +197,48 @@ def state2img(state,
 
 
 split = 'Defense3'
-# if osp.exists(f'{scenes_path}/val_dataset.pt'):
-#     with open(f'{scenes_path}/val_dataset.pt', 'rb') as fin:
-#         info = pickle.load(fin)
-#         x = info['x'][60]
+if osp.exists(f'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\val_dataset.pt'):
+    with open(f'C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\\\val_dataset.pt', 'rb') as fin:
+        info = pickle.load(fin)
+        x = info['x']
 
-# to_render = [5180, 5360, 5410, 5720]
-# for i in to_render:
-#     state2img(x[i], custom_index=i // 10)
+actionsx = torch.FloatTensor([0,0,0,0,0,0])
+actionsy = torch.FloatTensor([0,0,0,0,0,0])
+to_render = [ 6490]
+for i in to_render:
+    state2img(x[i], custom_index=i // 10, perturbations_x=actionsx, perturbations_y=actionsy)
 
 # Mini Defense CLEVR #
 # Image Seed Validation 000006#
 
-x = {'positions': torch.LongTensor([ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  3,  4,  5,  6,  7,  8,
-          9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-         27, 28,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-          0,  0,  0,  0,  0,  0]),
- 'types': torch.LongTensor([1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-         2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
- 'object_positions': torch.FloatTensor([[ 0.5,  0.5,  0.0019],
-         [ -1,  -2,  0.0000],
-         [ -0.5,  -0.5,  0.0000],
-         [ 1,  1,  1.0000],
-         [ 0.0000,  0.0000,  0.0000],
-         [ 0.0000,  0.0000,  0.0000],
-         [ 0.0000,  0.0000,  0.0000],
-         [ 0.0000,  0.0000,  0.0000],
-         [ 0.0000,  0.0000,  0.0000],
-         [ 0.0000,  0.0000,  0.0000],
-         [ 0.0000,  0.0000,  0.0000]]),
- 'object_colors': torch.LongTensor([3, 2, 4, 5, 0, 0, 0, 0, 0, 0]),
- 'object_shapes': torch.LongTensor([1, 2, 3, 1, 0, 0, 0, 0, 0, 0]),
- 'object_materials': torch.LongTensor([2, 1, 2, 1, 0, 0, 0, 0, 0, 0]),
- 'object_sizes': torch.LongTensor([1, 1, 2, 2, 0, 0, 0, 0, 0, 0]),
- 'question': torch.LongTensor([ 1, 13, 50, 84, 58, 66, 84, 86, 83, 50, 54, 66, 84, 28, 26, 16, 67, 84,
-         72, 77, 66, 84, 25, 45, 59, 26,  5,  2,  0,  0,  0,  0,  0,  0,  0,  0,
-          0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0])}
+# x = {'positions': torch.LongTensor([ 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  3,  4,  5,  6,  7,  8,
+#           9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+#          27, 28,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+#           0,  0,  0,  0,  0,  0]),
+#  'types': torch.LongTensor([1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+#          2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+#          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+#  'object_positions': torch.FloatTensor([[ 0.5,  0.5,  0.0019],
+#          [ -1,  -2,  0.0000],
+#          [ -0.5,  -0.5,  0.0000],
+#          [ 1,  1,  1.0000],
+#          [ 0.0000,  0.0000,  0.0000],
+#          [ 0.0000,  0.0000,  0.0000],
+#          [ 0.0000,  0.0000,  0.0000],
+#          [ 0.0000,  0.0000,  0.0000],
+#          [ 0.0000,  0.0000,  0.0000],
+#          [ 0.0000,  0.0000,  0.0000],
+#          [ 0.0000,  0.0000,  0.0000]]),
+#  'object_colors': torch.LongTensor([3, 2, 4, 5, 0, 0, 0, 0, 0, 0]),
+#  'object_shapes': torch.LongTensor([1, 2, 3, 1, 0, 0, 0, 0, 0, 0]),
+#  'object_materials': torch.LongTensor([2, 1, 2, 1, 0, 0, 0, 0, 0, 0]),
+#  'object_sizes': torch.LongTensor([1, 1, 2, 2, 0, 0, 0, 0, 0, 0]),
+#  'question': torch.LongTensor([ 1, 13, 50, 84, 58, 66, 84, 86, 83, 50, 54, 66, 84, 28, 26, 16, 67, 84,
+#          72, 77, 66, 84, 25, 45, 59, 26,  5,  2,  0,  0,  0,  0,  0,  0,  0,  0,
+#           0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0])}
 
-actionsx = torch.FloatTensor([0,0,0,0])
-actionsy = torch.FloatTensor([0,0,0,0])
-result = state2img(state=x, custom_index=1, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
+
+#result = state2img(state=x, custom_index=1, delete_every=False, retry=False, perturbations_x=actionsx, perturbations_y=actionsy)
 
 
 #wizard = Wizard(2)
