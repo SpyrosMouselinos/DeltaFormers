@@ -152,7 +152,7 @@ def state2img(state,
         experiment_name = '2it'
     else:
         experiment_name = '3it'
-    split_name = split_name + '_experiment_name'
+    split_name = split_name + f'_{experiment_name}'
     wr = []
     images_to_be_rendered = n_possible_images = 1
     n_objects_per_image = state['types'][:10].sum().item()
