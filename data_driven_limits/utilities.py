@@ -193,6 +193,17 @@ def state2img(state,
                 tmp_materials.append(state['object_materials'][object_idx].item() - 1)
                 tmp_sizes.append(state['object_sizes'][object_idx].item() - 1)
 
+            if 'Test' in split_name:
+                # Test 1
+                if 'One' in split_name:
+                    tmp_shapes = [f+1 for f in tmp_shapes] # Make them spheres
+                    tmp_colors = [1,3,0] # Make blue -> red
+                elif 'Two' in split_name:
+                    tmp_shapes = [f + 1 for f in tmp_shapes]  # Make them spheres
+                    tmp_colors = [6, 3, 0]  # Make blue -> cyan
+            else:
+                pass
+
             assembled_images = 0
             if render_check(tmp_x, tmp_y, tmp_sizes, tmp_shapes) or bypass:
                 for i in range(0, swaps+1):

@@ -37,7 +37,7 @@ def initialize_scene_seed(scenes_path, scene_id):
     return x
 
 
-def generate_dataset(number_of_objects, number_of_swaps, image_seed, agent_percentage=10, random_agent_choice=True):
+def generate_dataset(number_of_objects, number_of_swaps, image_seed, agent_percentage=10, random_agent_choice=True, split_name='Limit'):
     if number_of_objects < 2 or number_of_objects > 3:
         raise NotImplementedError("Currently Supporting 2 or 3 items")
     if number_of_swaps < 1 or number_of_swaps > paragontiko(number_of_objects):
@@ -64,7 +64,7 @@ def generate_dataset(number_of_objects, number_of_swaps, image_seed, agent_perce
             actionsx = torch.cat([actionsx, torch.FloatTensor([0])])
             actionsy = torch.cat([actionsy, torch.FloatTensor([0])])
         result = state2img(state=image_seed, custom_index=i, bypass=False, retry=False, perturbations_x=actionsx,
-                           perturbations_y=actionsy, swaps=number_of_swaps, pad=number_of_objects == 2)
+                           perturbations_y=actionsy, swaps=number_of_swaps, pad=number_of_objects == 2, split_name=split_name)
         if result >= 1:
             created += result
             missed += paragontiko(number_of_objects) - result
@@ -79,8 +79,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--noo', type=int, default=2)
     parser.add_argument('--nos', type=int, default=1)
-    parser.add_argument('--agentper', type=int, default=100)
+    parser.add_argument('--agentper', type=int, default=20)
     parser.add_argument('--randac', type=str, default='False')
+    parser.add_argument('--split_name', type=str, default='Limits_Test_Two')
     parser.add_argument('--image_seed_id', type=int, default=60)
     parser.add_argument('--image_seed_path', type=str, default='None')
     parser.add_argument('--output_image_dir', type=str, default=OUTPUT_IMAGE_DIR_)
@@ -102,4 +103,4 @@ if __name__ == '__main__':
                             func_kwargs={'scenes_path': image_seed_path, 'scene_id': args.image_seed_id})
     s = filelocator.get()
     generate_dataset(number_of_objects=args.noo, number_of_swaps=args.nos, image_seed=s, agent_percentage=args.agentper,
-                     random_agent_choice=random_agent_choice)
+                     random_agent_choice=random_agent_choice, split_name=args.split_name)

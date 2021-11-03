@@ -15,6 +15,7 @@ from modules.embedder import *
 from utils.train_utils import StateCLEVR, ImageCLEVR, ImageCLEVR_HDF5
 from fool_models.film_utils import load_film, load_resnet_backbone
 
+
 def _print(something):
     print(something, flush=True)
     return
@@ -118,12 +119,13 @@ def accuracy_metric(y_pred, y_true):
     return float(100 * acc.sum() / len(acc))
 
 
-def train_model(config, device, experiment_name='experiment_1', load_from=None, clvr_path='data/',
-                questions_path='data/', scenes_path='data/', use_cache=False, use_hdf5=False,
-                freeze_exponential_growth=False, train_percentage=20, random_seed=0):
-    effective_range = int(4200 * (train_percentage / 100))
+def train_model(device, experiment_name='experiment_1', clvr_path='data/',
+                questions_path='data/', scenes_path='data/',
+                train_percentage=20, random_seed=0):
+    effective_range_percentage = train_percentage / 100
     random.seed(random_seed)
     np.random.seed(random_seed)
+
     if device == 'cuda':
         device = 'cuda:0'
 
@@ -137,9 +139,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     # with open(config, 'r') as fin:
     #     config = yaml.load(fin, Loader=yaml.FullLoader)
 
-    #model = AVAILABLE_MODELS[config['model_architecture']](config)
+    # model = AVAILABLE_MODELS[config['model_architecture']](config)
     # _print(f"Loading Model of type: {config['model_architecture']}\n")
     # model, _, _, _, _ = load(path=load_from, model=model, mode='model')
+
     resnet = load_resnet_backbone()
     resnet.eval()
     program_generator, execution_engine = load_film()
@@ -148,45 +151,32 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     program_generator.train()
     execution_engine.train()
 
-    # train_idx = []
-    # test_idx = []
-    # for i in range(0, 7):
-    #     nr = (700 * i, 700 * (i + 1))
-    #     nrr = list(range(nr))
-    #     for k, j in enumerate(nrr):
-    #         if k <= 7 * train_percentage:
-    #             train_idx.append(j)
-    #         else:
-    #             test_idx.append(j)
-
-    train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense2',
+    train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Limits',
                                                                     clvr_path=clvr_path,
                                                                     questions_path=questions_path,
                                                                     scenes_path=scenes_path,
-                                                                    use_cache=use_cache, return_program=False,
+                                                                    use_cache=False, return_program=False,
                                                                     effective_range_offset=0,
                                                                     randomize_range=False,
-                                                                    effective_range=effective_range,
+                                                                    effective_range=effective_range_percentage,
                                                                     prior_shuffle=False, output_shape=224)
-    shuffle_order = train_set.indices
 
-    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=4, shuffle=True)
+    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=2, shuffle=False)
 
-    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='defense2',
+    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Limits',
                                                                   clvr_path=clvr_path,
                                                                   questions_path=questions_path,
-                                                                  scenes_path=scenes_path, use_cache=use_cache,
+                                                                  scenes_path=scenes_path, use_cache=False,
                                                                   return_program=False,
-                                                                  effective_range_offset=effective_range,
+                                                                  effective_range_offset=effective_range_percentage,
                                                                   randomize_range=False, effective_range=None,
-                                                                  prior_shuffle=True, indicies=shuffle_order, output_shape=224)
+                                                                  prior_shuffle=False,
+                                                                  output_shape=224)
 
     val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=1, shuffle=False)
-    optimizer1 = torch.optim.AdamW(params=program_generator.parameters(), lr=1e-4, weight_decay=1e-4)
-    optimizer2 = torch.optim.AdamW(params=execution_engine.parameters(), lr=1e-4, weight_decay=1e-4)
 
-    print(len(train_dataloader) * 16)
-    print(len(val_dataloader) * 16)
+    optimizer1 = torch.optim.AdamW(params=program_generator.parameters(), lr=1e-4, weight_decay=2e-5)
+    optimizer2 = torch.optim.AdamW(params=execution_engine.parameters(), lr=1e-4, weight_decay=2e-5)
 
     init_epoch = 0
 
@@ -199,9 +189,10 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
     overfit_count = -3
     optimizer1.zero_grad()
     optimizer2.zero_grad()
+
     flag = False
-    log_interval = 1000
     running_train_batch_index = 0
+
     for epoch in range(init_epoch, 20):
         _print(f"Epoch: {epoch}\n")
         if flag:
@@ -307,9 +298,11 @@ def train_model(config, device, experiment_name='experiment_1', load_from=None, 
         total_loss = 0.
         total_acc = 0.
 
-    with open(f'C:\\Users\\Spyros\\Desktop\\forfucksake\\film_percentage_{train_percentage}_{random_seed}.txt', 'w') as fout:
+    with open(f'C:\\Users\\Spyros\\Desktop\\generalize\\film_percentage_{train_percentage}_{random_seed}.txt',
+              'w') as fout:
         fout.write('GAME\n')
         fout.write(str(best_val_acc))
+
     print(f"Final Results for {train_percentage} Percentage!\n")
     print(best_val_acc)
     return
@@ -320,8 +313,7 @@ if __name__ == '__main__':
     parser.add_argument('--name', type=str, help='The name of the experiment', default='experiment_dfp')
     parser.add_argument('--config', type=str, help='The path to the config file', default='./config_dfp.yaml')
     parser.add_argument('--device', type=str, help='cpu or cuda', default='cuda')
-    # parser.add_argument('--load_from', type=str, help='continue training',
-    #                     default="./results/experiment_fp/lock_safe.pt")
+
     parser.add_argument('--load_from', type=str, help='continue training',
                         default='None')
     parser.add_argument('--scenes_path', type=str, help='folder of scenes', default='data/')
@@ -348,19 +340,8 @@ if __name__ == '__main__':
         args.use_hdf5 = False
     else:
         args.use_hdf5 = True
-        # StateCLEVR(config=None, split='Defense2', scenes_path='E:\\DeltaFormers\\data', questions_path='E:\\DeltaFormers\\data',
-        #                            clvr_path='E:\\DeltaFormers\\data', use_cache=False, return_program=False,
-        #                            effective_range=None, effective_range_offset=0)
-        # ImageCLEVR_HDF5(config=None, split='Defense2', clvr_path='E:\\DeltaFormers\\data', questions_path='E:\\DeltaFormers\\data',
-        #                                 scenes_path='E:\\DeltaFormers\\data', use_cache=False, return_program=False,
-        #                                 effective_range=None, output_shape=224,
-        #                                 effective_range_offset=0)
-        # sys.exit(1)
-    #for run in range(0, 20):
-    for train_percentage in [10, 50, 70]:
-        train_model(config=args.config, device=args.device, experiment_name=args.name, load_from=args.load_from,
-                    scenes_path=args.scenes_path, questions_path=args.questions_path, clvr_path=args.clvr_path,
-                    use_cache=args.use_cache, use_hdf5=args.use_hdf5,
-                    freeze_exponential_growth=args.freeze_exponential_growth,
-                    train_percentage=train_percentage,
+
+    for train_percentage in [5, 10, 15, 20, 25, 30]:
+        train_model(device=args.device, experiment_name=args.name, clvr_path=args.clvr_path,
+                    questions_path=args.questions_path, scenes_path=args.scenes_path, train_percentage=train_percentage,
                     random_seed=train_percentage + 0)

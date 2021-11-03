@@ -383,29 +383,47 @@ class ImageCLEVR_HDF5(Dataset):
             self.split = info['split']
             self.q2index = info['q2index']
             self.a2index = info['a2index']
+            # if effective_range is None:
+            #     if prior_shuffle:
+            #         if self.indices is None:
+            #             all_indexes = list(enumerate(list(range(len(info['x'])))))
+            #             random.shuffle(all_indexes)
+            #             self.indices, _ = zip(*all_indexes)
+            #             self.indices = list(self.indices)
+            #         self.x = [info['x'][j] for j in self.indices][int(effective_range_offset):]
+            #         self.y = [info['y'][j] for j in self.indices][int(effective_range_offset):]
+            #     else:
+            #         if self.indices is None:
+            #             all_indexes = list(enumerate(list(range(len(info['x'])))))
+            #             self.indices, _ = zip(*all_indexes)
+            #             self.indices = list(self.indices)
+            #         self.x = [info['x'][j] for j in self.indices]
+            #         self.y = [info['y'][j] for j in self.indices]
+            # else:
+            #     if prior_shuffle:
+            #         if self.indices is None:
+            #             all_indexes = list(enumerate(list(range(len(info['x'])))))
+            #             random.shuffle(all_indexes)
+            #             self.indices, _ = zip(*all_indexes)
+            #             self.indices = list(self.indices)
+            #         self.x = [info['x'][j] for j in self.indices]
+            #         self.y = [info['y'][j] for j in self.indices]
+            x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 2, number_of_limits=2)
+            y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 2, number_of_limits=2)
             if effective_range is None:
-                if prior_shuffle:
-                    if self.indices is None:
-                        all_indexes = list(enumerate(list(range(len(info['x'])))))
-                        random.shuffle(all_indexes)
-                        self.indices, _ = zip(*all_indexes)
-                        self.indices = list(self.indices)
-                    self.x = [info['x'][j] for j in self.indices][int(effective_range_offset):]
-                    self.y = [info['y'][j] for j in self.indices][int(effective_range_offset):]
-                else:
-                    self.x = [info['x'][j] for j in self.indices]
-                    self.y = [info['x'][j] for j in self.indices]
+                effective_range = len(x_)
             else:
-                if prior_shuffle:
-                    if self.indices is None:
-                        all_indexes = list(enumerate(list(range(len(info['x'])))))
-                        random.shuffle(all_indexes)
-                        self.indices, _ = zip(*all_indexes)
-                        self.indices = list(self.indices)
-                    self.x = [info['x'][j] for j in self.indices]
-                    self.y = [info['y'][j] for j in self.indices]
-                self.x = info['x'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
-                self.y = info['y'][int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
+                effective_range = effective_range * len(x_)
+
+            if effective_range_offset is None:
+                effective_range_offset = 0
+            else:
+                effective_range_offset = effective_range_offset * len(x_)
+
+
+
+            self.x = x_[int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
+            self.y = y_[int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
             if self.return_program:
                 try:
                     if effective_range is None:
@@ -486,6 +504,13 @@ class ImageCLEVR_HDF5(Dataset):
         # program = self.p[idx]
 
         return {'image': image, 'question': question}, answer
+
+    def interleave_list(self, ql, skip_limit=1782, number_of_limits=8):
+        new_l = []
+        for i in range(0, skip_limit):
+            for j in range(0, number_of_limits):
+                new_l.append(ql[i + j * skip_limit])
+        return new_l
 
 
 class MixCLEVR_HDF5(Dataset):
