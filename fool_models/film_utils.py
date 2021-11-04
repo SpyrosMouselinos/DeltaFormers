@@ -87,11 +87,13 @@ def load_program_generator(path):
     return model, kwargs
 
 
-def load_execution_engine(path, verbose=False):
+def load_execution_engine(path, verbose=False, n_outputs=None):
     checkpoint = load_cpu(path)
     kwargs = checkpoint['execution_engine_kwargs']
     state = checkpoint['execution_engine_state']
     kwargs['verbose'] = verbose
+    if n_outputs is not None:
+        kwargs['n_outputs'] = n_outputs
     kwargs = get_updated_args(kwargs, FiLMedNet)
     model = FiLMedNet(**kwargs)
     #model.load_state_dict(state)
@@ -99,10 +101,10 @@ def load_execution_engine(path, verbose=False):
 
 
 def load_film(program_generator=f'{UP_TO_HERE_}/fool_models/resources/film.pt',
-              execution_engine=f'{UP_TO_HERE_}/fool_models/resources/film.pt'):
+              execution_engine=f'{UP_TO_HERE_}/fool_models/resources/film.pt', n_outputs=None):
     program_generator, _ = load_program_generator(program_generator)
     program_generator.train()
-    execution_engine, _ = load_execution_engine(execution_engine, verbose=False)
+    execution_engine, _ = load_execution_engine(execution_engine, verbose=False, n_outputs=n_outputs)
     execution_engine.train()
     model = (program_generator, execution_engine)
     return model

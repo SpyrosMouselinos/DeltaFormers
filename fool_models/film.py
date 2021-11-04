@@ -296,10 +296,14 @@ class FiLMedNet(nn.Module):
                  debug_every=float('inf'),
                  print_verbose_every=float('inf'),
                  verbose=True,
+                 n_outputs=None
                  ):
         super(FiLMedNet, self).__init__()
 
-        num_answers = len(vocab['answer_idx_to_token'])
+        if n_outputs is None:
+            num_answers = len(vocab['answer_idx_to_token'])
+        else:
+            num_answers = n_outputs
 
         self.stem_times = []
         self.module_times = []

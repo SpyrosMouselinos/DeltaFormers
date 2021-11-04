@@ -408,8 +408,12 @@ class ImageCLEVR_HDF5(Dataset):
             #             self.indices = list(self.indices)
             #         self.x = [info['x'][j] for j in self.indices]
             #         self.y = [info['y'][j] for j in self.indices]
-            x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 2, number_of_limits=2)
-            y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 2, number_of_limits=2)
+            if effective_range is None and effective_range_offset == 0:
+                x_ = info['x']
+                y_ = info['y']
+            else:
+                x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 2, number_of_limits=2)
+                y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 2, number_of_limits=2)
             if effective_range is None:
                 effective_range = len(x_)
             else:
