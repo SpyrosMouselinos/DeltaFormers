@@ -412,8 +412,8 @@ class ImageCLEVR_HDF5(Dataset):
                 x_ = info['x']
                 y_ = info['y']
             else:
-                x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 2, number_of_limits=2)
-                y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 2, number_of_limits=2)
+                x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 6, number_of_limits=6)
+                y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 6, number_of_limits=6)
             if effective_range is None:
                 effective_range = len(x_)
             else:
