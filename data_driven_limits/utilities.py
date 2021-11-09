@@ -156,7 +156,7 @@ def state2img(state,
     wr = []
     images_to_be_rendered = n_possible_images = 1
     n_objects_per_image = state['types'][:10].sum().item()
-
+    #print(f"{n_objects_per_image} Objects Detected...")
     key_light_jitter = fill_light_jitter = back_light_jitter = [0.5] * n_possible_images
     if retry:
         choices = [1, 0.5, 0.2, -0.2, -0.5, 0, -1]
@@ -182,11 +182,11 @@ def state2img(state,
             tmp_sizes = []
             for object_idx in range(n_objects_per_image):
                 tmp_x.append(
-                    (state['object_positions'][object_idx].numpy()[0] * 3 + perturbations_x[object_idx]).clip(-2.98,
-                                                                                                              2.98).item())
+                    (state['object_positions'][object_idx].numpy()[0] * 3 + perturbations_x[object_idx]).clip(-3,
+                                                                                                              3).item())
                 tmp_y.append(
-                    (state['object_positions'][object_idx].numpy()[1] * 3 + perturbations_y[object_idx]).clip(-2.98,
-                                                                                                              2.98).item())
+                    (state['object_positions'][object_idx].numpy()[1] * 3 + perturbations_y[object_idx]).clip(-3,
+                                                                                                              3).item())
                 tmp_z.append(state['object_positions'][object_idx].numpy()[2] * 360)
                 tmp_colors.append(state['object_colors'][object_idx].item() - 1)
                 tmp_shapes.append(state['object_shapes'][object_idx].item() - 1)
@@ -221,7 +221,6 @@ def state2img(state,
                     materials.append(tmp_materials_)
                     sizes.append(tmp_sizes_)
                     wr.append(image_idx)
-
                     assembled_images_ = render_image(key_light_jitter=key_light_jitter,
                                                      fill_light_jitter=fill_light_jitter,
                                                      back_light_jitter=back_light_jitter, camera_jitter=camera_jitter,

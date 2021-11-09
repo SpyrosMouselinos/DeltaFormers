@@ -77,7 +77,7 @@ def perform_train(dataloader, device, resnet, program_generator, execution_engin
 
             if cur_acc >= 98:
                 counter += 1
-                if counter >= 5:
+                if counter >= 2:
                     flag = True
         running_train_batch_index += 1
 
@@ -232,6 +232,18 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
                                                                     randomize_range=False,
                                                                     effective_range=effective_range_percentage,
                                                                     prior_shuffle=False, output_shape=224)
+
+    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Defense2',
+                                                                  clvr_path=clvr_path,
+                                                                  questions_path=questions_path,
+                                                                  scenes_path=scenes_path, use_cache=False,
+                                                                  return_program=False,
+                                                                  effective_range_offset=effective_range_percentage,
+                                                                  randomize_range=False,
+                                                                  effective_range=None,
+                                                                  prior_shuffle=False,
+                                                                  output_shape=224, indicies=train_set.sb)
+
     if mix == 'None':
         pass
         # test_set_one = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Limits_Test_One',
@@ -321,6 +333,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
                                                                            output_shape=224)
 
     train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=6, shuffle=True)
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=8, shuffle=False)
 
     # test_dataloader_one = torch.utils.data.DataLoader(test_set_one, batch_size=10, shuffle=False)
     # test_dataloader_two = torch.utils.data.DataLoader(test_set_two, batch_size=10, shuffle=False)
@@ -354,17 +367,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
             del train_set
             del train_dataloader
 
-            val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Defense2',
-                                                                          clvr_path=clvr_path,
-                                                                          questions_path=questions_path,
-                                                                          scenes_path=scenes_path, use_cache=False,
-                                                                          return_program=False,
-                                                                          effective_range_offset=effective_range_percentage,
-                                                                          randomize_range=False,
-                                                                          effective_range=None,
-                                                                          prior_shuffle=False,
-                                                                          output_shape=224)
-            val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=8, shuffle=False)
+
             val_acc = perform_test('validation', resnet, program_generator, execution_engine, criterion, metric, device,
                                    val_dataloader)
             del val_set
@@ -442,9 +445,9 @@ if __name__ == '__main__':
     else:
         args.use_hdf5 = True
 
-    for train_percentage in [1, 5, 10, 15]:
+    for train_percentage in [20, 50, 80]:
         gc.collect()
         torch.cuda.empty_cache()
         train_model(device=args.device, experiment_name=args.name, clvr_path=args.clvr_path,
                     questions_path=args.questions_path, scenes_path=args.scenes_path, train_percentage=train_percentage,
-                    random_seed=train_percentage + 0, mix=args.mix)
+                    random_seed=666, mix=args.mix)

@@ -12,7 +12,6 @@ from torchvision import transforms
 from tqdm import trange
 
 sys.path.insert(0, osp.abspath('..'))
-import torch
 import yaml
 from torch.utils.data import Dataset
 from natsort import natsorted
@@ -349,11 +348,11 @@ class ImageCLEVR_HDF5(Dataset):
                  scenes_path=None, use_cache=False, return_program=False, effective_range=None, output_shape=None,
                  randomize_range=False,
                  effective_range_offset=0, prior_shuffle=False, indicies=None):
-        self.indices = indicies
+        self.sb = indicies
         if randomize_range:
             if effective_range is not None:
                 print(effective_range)
-                effective_range_offset = random.randint(0, max(0,15560 - int(effective_range) - 1))
+                effective_range_offset = random.randint(0, max(0, 15560 - int(effective_range) - 1))
             else:
                 effective_range_offset = 0
         else:
@@ -412,8 +411,14 @@ class ImageCLEVR_HDF5(Dataset):
                 x_ = info['x']
                 y_ = info['y']
             else:
-                x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 6, number_of_limits=6)
-                y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 6, number_of_limits=6)
+                # x_ = info['x']
+                # y_ = info['y']
+                # x_ = self.interleave_list(info['x'], skip_limit=len(info['x']) // 6, number_of_limits=6)
+                # y_ = self.interleave_list(info['y'], skip_limit=len(info['y']) // 6, number_of_limits=6)
+                x_, sb = self.shuffle(info['x'], by=self.sb)
+                y_, _ = self.shuffle(info['y'], by=sb)
+                if self.sb is None:
+                   self.sb = sb
             if effective_range is None:
                 effective_range = len(x_)
             else:
@@ -423,8 +428,6 @@ class ImageCLEVR_HDF5(Dataset):
                 effective_range_offset = 0
             else:
                 effective_range_offset = effective_range_offset * len(x_)
-
-
 
             self.x = x_[int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
             self.y = y_[int(effective_range_offset):int(effective_range) + int(effective_range_offset)]
@@ -515,6 +518,18 @@ class ImageCLEVR_HDF5(Dataset):
             for j in range(0, number_of_limits):
                 new_l.append(ql[i + j * skip_limit])
         return new_l
+
+
+
+    def shuffle(self, l, by=None):
+        if by is None:
+            x = list(enumerate(l))
+            random.shuffle(x)
+            indices, l = zip(*x)
+            return l, indices
+        else:
+            x = [l[index] for index in by]
+            return x, by
 
 
 class MixCLEVR_HDF5(Dataset):
@@ -688,9 +703,9 @@ class SGD_GC(Optimizer):
                 if weight_decay != 0:
                     d_p.add_(weight_decay, p.data)
 
-                #GC operation for Conv layers and FC layers
-                if len(list(d_p.size()))>1:
-                   d_p.add_(-d_p.mean(dim = tuple(range(1,len(list(d_p.size())))), keepdim = True))
+                # GC operation for Conv layers and FC layers
+                if len(list(d_p.size())) > 1:
+                    d_p.add_(-d_p.mean(dim=tuple(range(1, len(list(d_p.size())))), keepdim=True))
 
                 if momentum != 0:
                     param_state = self.state[p]
