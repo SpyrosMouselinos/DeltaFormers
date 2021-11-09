@@ -107,8 +107,8 @@ if __name__ == '__main__':
     clear_all = eval(args.clear_all)
     if clear_all:
         base = osp.dirname(osp.abspath(__file__)).replace('data_driven_limits', 'neural_render')
-        images = base + '\images'
-        scenes = base + '\scenes'
+        images = base + '/images'
+        scenes = base + '/scenes'
         shutil.rmtree(images)
         shutil.rmtree(scenes)
         os.mkdir(images)
