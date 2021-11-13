@@ -99,7 +99,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_scene_dir', type=str, default=OUTPUT_SCENE_DIR_)
     parser.add_argument('--output_scene_file', type=str, default=OUTPUT_SCENE_FILE_)
     parser.add_argument('--output_question_file', type=str, default=OUTPUT_QUESTION_FILE_)
-    parser.add_argument('--clear_all', type=str, default='True')
+    parser.add_argument('--clear_all', type=str, default='False')
 
     args = parser.parse_args()
     image_seed_path = str(args.image_seed_path)

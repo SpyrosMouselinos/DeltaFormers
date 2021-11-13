@@ -104,7 +104,7 @@ class CnnLstmSaModel(nn.Module):
             'rnn_dropout': rnn_dropout,
         }
         self.rnn = LstmEncoder(**rnn_kwargs)
-
+        self.att_maps = []
         C, H, W = cnn_feat_dim
         self.image_proj = nn.Conv2d(C, rnn_dim, kernel_size=(1, 1), padding=(0, 0))
         self.stacked_attns = []
@@ -128,6 +128,7 @@ class CnnLstmSaModel(nn.Module):
 
         for sa in self.stacked_attns:
             u = sa(v, u)
+            self.att_maps.append(sa.attention_maps)
 
         scores = self.classifier(u)
         return scores

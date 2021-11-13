@@ -436,7 +436,7 @@ class FiLMedNet(nn.Module):
         if self.use_coords_freq > 0:
             final_module_output = torch.cat([final_module_output, batch_coords], 1)
         if save_activations:
-            self.cf_input = final_module_output
+            self.att_maps = [final_module_output]
         out = self.classifier(final_module_output)
         return out
 

@@ -1,7 +1,10 @@
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import numpy as np
 
 
 def str_to_function(s):
@@ -112,6 +115,13 @@ class ResidualBlock(nn.Module):
         res = x if self.proj is None else self.proj(x)
         if self.with_residual:
             out = F.relu(res + out)
+            files = os.listdir('C:\\Users\\Guldan\\Desktop')
+            index = 0
+            while f'act_{index}.npy' in files:
+                index += 1
+            with open(f'C:\\Users\\Guldan\\Desktop\\act_{index}.npy', 'wb') as f:
+                np.save(f, out.detach().cpu().numpy())
+
         else:
             out = F.relu(out)
         return out
