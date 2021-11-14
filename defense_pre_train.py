@@ -110,7 +110,7 @@ def perform_test(name, resnet, program_generator, execution_engine, criterion, m
                     val_batch_index + 1),
             total_val_acc / (
                     val_batch_index + 1)))
-        print(f"{name} Results for {train_percentage} Percentage!\n")
+        _print(f"{name} Results for {train_percentage} Percentage!\n")
     return total_val_acc / (val_batch_index + 1)
 
 
@@ -383,7 +383,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
             # del test_set_two
             # del test_dataloader_two
             # print(f"Val Acc: {val_acc} | Test Acc One: {test_acc_one} | Test Acc Two: {test_acc_two}")
-            print(f"Unseen Test Acc: {val_acc}")
+            _print(f"Unseen Test Acc: {val_acc}")
             return
         flag, running_train_batch_index, counter = perform_train(train_dataloader, device, resnet, program_generator,
                                                                  execution_engine, criterion, metric,
