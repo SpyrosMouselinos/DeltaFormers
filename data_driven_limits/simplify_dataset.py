@@ -1,16 +1,16 @@
 import copy
-import shutil
-import sys
 import json
-from natsort import natsorted
 import os
 import os.path as osp
+import shutil
+import sys
+
 import matplotlib.pyplot as plt
+from natsort import natsorted
 from skimage.io import imread, imshow
 
-from utils.train_utils import StateCLEVR, ImageCLEVR_HDF5, MixCLEVR_HDF5
-
 sys.path.insert(0, osp.abspath('.'))
+from utils.train_utils import StateCLEVR, ImageCLEVR_HDF5, MixCLEVR_HDF5
 import argparse
 import warnings
 
@@ -242,8 +242,8 @@ def main(dataset_name, dataset_templates, interactive):
         print(f"Same Template Junk Exist! Found {matched_scene_counts} scenes and {matched_image_counts} images!\n")
     copy_images_and_scenes(dataset_name=dataset_name, images=matched_image_files, scenes=matched_scene_files)
     simplify_images(dataset_name, matched_image_files)
-    #make_questions(dataset_name, matched_scene_counts, interactive=interactive)
-    #prepare_into_dataloaders(dataset_name)
+    # make_questions(dataset_name, matched_scene_counts, interactive=interactive)
+    # prepare_into_dataloaders(dataset_name)
     return
 
 
@@ -254,7 +254,6 @@ if __name__ == '__main__':
     parser.add_argument('--name', type=str, default='Grid_Test')
     parser.add_argument('--interactive', type=str, default='False')
     args = parser.parse_args()
-
 
     dataset_templates = [f'CLEVR_{args.name}_{args.noo}it_{f}' for f in range(0, args.nos + 1)]
 
