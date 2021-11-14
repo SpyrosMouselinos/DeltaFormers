@@ -70,7 +70,7 @@ def add_nulls2(int, cnt):
 def detect_dataset(templates, kind='images', path=DEFAULT_PATH):
     mathced_counts = [0] * len(templates)
     matched_files = []
-    image_path = path + f'\{kind}'
+    image_path = path + f'/{kind}'
     image_files = os.listdir(image_path)
     for i, template in enumerate(templates):
         for file in image_files:
