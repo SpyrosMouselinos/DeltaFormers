@@ -361,7 +361,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
     flag = False
     running_train_batch_index = 0
 
-    for epoch in range(init_epoch, 30):
+    for epoch in range(init_epoch, 80):
         _print(f"Epoch: {epoch}\n")
         if flag:
             del train_set
@@ -408,7 +408,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
         # End of epoch #
         total_loss = 0.
         total_acc = 0.
-        if epoch == 29:
+        if epoch == 79:
             flag = True
     return
 
@@ -445,7 +445,7 @@ if __name__ == '__main__':
     else:
         args.use_hdf5 = True
 
-    for train_percentage in [1, 5, 10, 20]:
+    for train_percentage in [1, 2, 5, 10, 20]:
         gc.collect()
         torch.cuda.empty_cache()
         train_model(device=args.device, experiment_name=args.name, clvr_path=args.clvr_path,
