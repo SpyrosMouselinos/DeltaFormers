@@ -223,7 +223,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
     program_generator.train()
     execution_engine.train()
 
-    train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Defense2',
+    train_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Grid_Test',
                                                                     clvr_path=clvr_path,
                                                                     questions_path=questions_path,
                                                                     scenes_path=scenes_path,
@@ -233,7 +233,7 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
                                                                     effective_range=effective_range_percentage,
                                                                     prior_shuffle=False, output_shape=224)
 
-    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Defense2',
+    val_set = AVAILABLE_DATASETS[config['model_architecture']][1](config=config, split='Grid_Test',
                                                                   clvr_path=clvr_path,
                                                                   questions_path=questions_path,
                                                                   scenes_path=scenes_path, use_cache=False,
@@ -332,8 +332,8 @@ def train_model(device, experiment_name='experiment_1', clvr_path='data/',
                                                                            prior_shuffle=False,
                                                                            output_shape=224)
 
-    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=6, shuffle=True)
-    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=8, shuffle=False)
+    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=32, shuffle=True)
+    val_dataloader = torch.utils.data.DataLoader(val_set, batch_size=32, shuffle=False)
 
     # test_dataloader_one = torch.utils.data.DataLoader(test_set_one, batch_size=10, shuffle=False)
     # test_dataloader_two = torch.utils.data.DataLoader(test_set_two, batch_size=10, shuffle=False)
@@ -445,7 +445,7 @@ if __name__ == '__main__':
     else:
         args.use_hdf5 = True
 
-    for train_percentage in [20, 50, 80]:
+    for train_percentage in [1, 5, 10, 20]:
         gc.collect()
         torch.cuda.empty_cache()
         train_model(device=args.device, experiment_name=args.name, clvr_path=args.clvr_path,
