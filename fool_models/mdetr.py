@@ -1,14 +1,16 @@
+import json
+import os
+import pathlib
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torchvision.transforms as T
-import matplotlib.pyplot as plt
-from collections import defaultdict
-import numpy as np
-import json
-from skimage.measure import find_contours
-from neural_render.blender_render_utils.constants import find_platform_slash, find_platform
 from matplotlib.patches import Polygon
-import pathlib
-import os
+from skimage.measure import find_contours
+
+from neural_render.blender_render_utils.constants import find_platform_slash, find_platform
 
 PLATFORM_SLASH = find_platform_slash()
 UP_TO_HERE_ = PLATFORM_SLASH.join(os.path.abspath(__file__).split(PLATFORM_SLASH)[:-2]).replace(PLATFORM_SLASH, '/')
@@ -122,7 +124,12 @@ class MDetrWrapper:
                 p = Polygon(verts, facecolor="none", edgecolor=c)
                 ax.add_patch(p)
 
-        plt.imshow(np_image)
+        np_image = np_image.transpose(2, 0, 1)[None]
+        mean = np.array([0.485, 0.456, 0.406]).reshape(1, 3, 1, 1)
+        std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
+        np_image = (np_image * std) + mean
+        np_image = np_image[0].transpose(1, 2, 0)[None]
+        plt.imshow(np_image[0])
         plt.axis('off')
         plt.show()
 
@@ -160,9 +167,9 @@ class MDetrWrapper:
                     span = memory_cache["tokenized"].token_to_chars(0, pos)
                     predicted_spans[item] += " " + caption[span.start:span.end]
 
-                bboxes_scaled = self.rescale_bboxes(outputs['pred_boxes'].cpu()[0, keep], im.size)
-                labels = [predicted_spans[k] for k in sorted(list(predicted_spans.keys()))]
-                self.plot_results(im, probas[keep], bboxes_scaled, labels)
+            bboxes_scaled = self.rescale_bboxes(outputs['pred_boxes'].cpu()[0, keep], (224, 224))
+            labels = [predicted_spans[k] for k in sorted(list(predicted_spans.keys()))]
+            self.plot_results(im.permute(1, 2, 0).cpu(), probas[keep].detach().cpu(), bboxes_scaled.detach(), labels)
 
         answer_types = outputs["pred_answer_type"].argmax(-1)
         answer_types = [x.item() for x in answer_types]
@@ -184,7 +191,7 @@ class MDetrWrapper:
     def to(self, where):
         return
 
-    def __call__(self, image, question):
+    def __call__(self, image, question, plot=False):
         ImageBatchSize = image.size(0)
         QuestionBatchSize = question.size(0)
         assert ImageBatchSize == QuestionBatchSize
@@ -194,8 +201,8 @@ class MDetrWrapper:
         for index in range(ImageBatchSize):
             image_ = image[index, :]
             question_ = question[index, :].cpu().numpy()
-            restored_question = ' '.join([idx_to_question_token[f] for f in question_ if f not in [1,2,0]])
-            answer = self.inference(im=image_, caption=restored_question, plot=False)
+            restored_question = ' '.join([idx_to_question_token[f] for f in question_ if f not in [1, 2, 0]])
+            answer = self.inference(im=image_, caption=restored_question, plot=plot)
             restored_answer = answer_token_to_idx[answer]
             answers.append(restored_answer)
 

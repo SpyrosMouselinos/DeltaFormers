@@ -91,8 +91,8 @@ def inference_with_mdetr(loader=None, model=None, resnet_extractor=None):
 
 
 def sinference_with_mdetr(model=None, loader=None, resnet_extractor=None):
-    img = imread('C:\\Users\\Guldan\\Desktop\\SQA-Paper\\Mdetr\\000890_mdetr.png')
-    question = 'What number of things are large metallic blocks on the left side of the brown metallic thing or big cyan shiny objects ?'
+    img = imread('C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\images\\val\\CLEVR_val_000000.png')
+    question = 'How many gray cubes are there?'
     #question_l = [1, 10, 85, 14, 25, 30, 64, 66, 84, 74, 75, 21, 84, 45, 86, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     try:
         img = rgba2rgb(img)
@@ -107,7 +107,7 @@ def sinference_with_mdetr(model=None, loader=None, resnet_extractor=None):
     img_var = torch.FloatTensor(img).to('cuda')
     questions_var = torch.LongTensor([question_token_to_idx[f] for f in question[:-1].split(' ')]).to('cuda')
     questions_var = questions_var.unsqueeze(0)
-    preds, _, _ = model(img_var, questions_var)
+    preds, _, _ = model(img_var, questions_var, True)
     try:
         print(idx_to_answer_token[preds[0].cpu().item()])
     except:
@@ -115,5 +115,5 @@ def sinference_with_mdetr(model=None, loader=None, resnet_extractor=None):
     return preds
 
 #loader = load_loader()
-#model = load_mdetr()
-#boo = sinference_with_mdetr(model, None, None)
+model = load_mdetr()
+boo = sinference_with_mdetr(model, None, None)
