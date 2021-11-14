@@ -41,7 +41,7 @@ def sanitize(qoa, dicta):
 
 def show_image(dataset_name, index):
     img = imread(
-        DEFAULT_DATASET_LOCATION + f'\\images\\{dataset_name}\\' + f'CLEVR_{dataset_name}_{add_nulls2(index, 6)}.png')
+        DEFAULT_DATASET_LOCATION + f'\\images\{dataset_name}\\' + f'CLEVR_{dataset_name}_{add_nulls2(index, 6)}.png')
     plt.figure()
     plt.title(f"View of dataset {dataset_name} / image id {index}")
     imshow(img)
@@ -104,30 +104,30 @@ def merge_scenes(list_of_scene_files, dataset_name):
 
 
 def copy_images_and_scenes(dataset_name, images=None, scenes=None):
-    if osp.exists(DEFAULT_DATASET_LOCATION + f'\\images\\{dataset_name}'):
+    if osp.exists(DEFAULT_DATASET_LOCATION + f'\images\{dataset_name}'):
         pass
     else:
-        os.mkdir(DEFAULT_DATASET_LOCATION + f'\\images\\{dataset_name}')
+        os.mkdir(DEFAULT_DATASET_LOCATION + f'\images\{dataset_name}')
     if images is None:
         pass
     else:
         for file in images:
-            shutil.copy(DEFAULT_PATH + '\\images\\' + file,
-                        DEFAULT_DATASET_LOCATION + f'\\images\\{dataset_name}\\' + file)
+            shutil.copy(DEFAULT_PATH + '\images\\' + file,
+                        DEFAULT_DATASET_LOCATION + f'\images\{dataset_name}\\' + file)
 
     if scenes is None:
         pass
     else:
-        merge_scenes(list_of_scene_files=[DEFAULT_PATH + '\\scenes\\' + f for f in scenes], dataset_name=dataset_name)
+        merge_scenes(list_of_scene_files=[DEFAULT_PATH + '\scenes\\' + f for f in scenes], dataset_name=dataset_name)
     return
 
 
 def simplify_images(dataset_name, matched_image_files):
     try:
         for i, image in enumerate(natsorted(
-                [DEFAULT_DATASET_LOCATION + f'\\images\\{dataset_name}\\' + file for file in matched_image_files])):
+                [DEFAULT_DATASET_LOCATION + f'\images\{dataset_name}\\' + file for file in matched_image_files])):
             os.rename(image,
-                      DEFAULT_DATASET_LOCATION + f'\\images\\{dataset_name}\\' + f'CLEVR_{dataset_name}_{add_nulls2(i, 6)}.png')
+                      DEFAULT_DATASET_LOCATION + f'\images\{dataset_name}\\' + f'CLEVR_{dataset_name}_{add_nulls2(i, 6)}.png')
     except FileNotFoundError:
         pass
     return
