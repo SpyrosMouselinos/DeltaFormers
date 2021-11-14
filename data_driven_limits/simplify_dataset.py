@@ -240,10 +240,10 @@ def main(dataset_name, dataset_templates, interactive):
     matched_scene_files, matched_scene_counts = detect_dataset(templates=dataset_templates, kind='scenes')
     if matched_image_counts != matched_scene_counts:
         print(f"Same Template Junk Exist! Found {matched_scene_counts} scenes and {matched_image_counts} images!\n")
-    copy_images_and_scenes(dataset_name=dataset_name, images=matched_image_files, scenes=matched_scene_files)
-    simplify_images(dataset_name, matched_image_files)
+    #copy_images_and_scenes(dataset_name=dataset_name, images=matched_image_files, scenes=matched_scene_files)
+    #simplify_images(dataset_name, matched_image_files)
     # make_questions(dataset_name, matched_scene_counts, interactive=interactive)
-    # prepare_into_dataloaders(dataset_name)
+    prepare_into_dataloaders(dataset_name)
     return
 
 
