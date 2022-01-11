@@ -926,7 +926,7 @@ class ConfusionGame:
 
         if isinstance(predictions_after, list):
             predictions_after = torch.LongTensor(predictions_after)
-        if self.batch_size == 1:
+        if self.batch_size == 1 or not isinstance(validity, list):
             validity = [validity]
         answer_stayed_the_same = self.org_answers - torch.stack(validity, dim=0).long()
         answer_stayed_the_same = 1.0 * answer_stayed_the_same.eq(0).squeeze(1)

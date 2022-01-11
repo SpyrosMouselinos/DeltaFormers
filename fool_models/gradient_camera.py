@@ -3,6 +3,7 @@ import os
 
 import matplotlib.pyplot as plt
 import numpy as np
+import skimage
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -49,8 +50,18 @@ def viz_attn(img, attn_map, blur=True):
     axes[1].imshow(getAttMap(img, attn_map, blur))
     for ax in axes:
         ax.axis("off")
-    plt.show()
 
+    plt.show()
+    return
+
+def single_viz_attn(img, attn_map, blur=True, model_name='', name=''):
+    arr = getAttMap(img, attn_map, blur)
+    plt.figure(figsize=(6,6))
+    plt.imshow(arr)
+    plt.axis('off')
+    plt.imsave(f'./image_resources/{model_name}/{name}.png', arr)
+    plt.show()
+    plt.close()
 
 class Hook:
     """Attaches to a module and records its activations and gradients."""
@@ -153,7 +164,7 @@ def gradCAM(
 def attCAM(
         model,
         inputs, model_type='monolith'):
-    if model_type == 'monlith':
+    if model_type == 'monolith':
         output = model(**inputs)
         print(idx_to_answer_token[torch.argmax(output).cpu().item()])
         att_maps = model.att_maps
@@ -220,7 +231,7 @@ def attCAM(
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 ###---- Choose Model ----###
-model = 'RNFP'
+model = 'FiLM'
 if model == 'SA':
     model_type = 'monolith'
     resnet = load_sa_resnet()
@@ -237,7 +248,7 @@ elif model == 'FiLM':
     program_generator.to(device)
     execution_engine.to(device)
     model = program_generator, execution_engine
-    layer = getattr(model[1], '3')
+    layer = getattr(model[1], '2')
 elif model == 'IEP':
     model_type = 'generator_engine_sample'
     resnet = load_iep_resnet()
@@ -255,8 +266,37 @@ elif model == 'RNFP':
     model.to(device)
     layer = getattr(model.cn, 'conv4')
 
+#######################
+#model_name = 'attn'
 
-image_name = '../data/images/val/CLEVR_val_000000.png'
+#name = 'sa_33_org'
+#image_name = './image_resources/attn/CLEVR_val_000033.png'
+#name = 'sa_33_man'
+#image_name = './image_resources/attn/000033_sa.png'
+#input_question = 'Is the number of small cubes that are right of the blue rubber block greater than the number of small balls that are in front of the cyan object '
+
+#name = 'sa_39_org'
+#image_name = './image_resources/attn/CLEVR_val_000039.png'
+#name = 'sa_39_man'
+#image_name = './image_resources/attn/000039_sa.png'
+#input_question = 'What shape is the thing that is in front of the small yellow cylinder and to the right of the rubber thing '
+
+
+model_name = 'grad'
+# name = 'film_521_org_pre'
+# image_name = './image_resources/grad/CLEVR_val_000521.png'
+# name = 'film_521_man_pre'
+# image_name = './image_resources/grad/film_val_000521.png'
+#input_question = 'How many other objects are the same shape as the big gray matte object '
+
+# name = 'film_541_org_pre'
+# image_name = './image_resources/grad/CLEVR_val_000541.png'
+name = 'film_541_man_pre'
+image_name = './image_resources/grad/film_val_000541.png'
+input_question = 'How many other things are the same shape as the big metallic thing '
+
+
+
 
 ###---- Image Preprocess ----####
 image_input = imread(image_name)
@@ -281,7 +321,7 @@ else:
 
 print("Enter your question...\n")
 # input_question = input().strip().lower()
-input_question = 'Is there a purple object'
+#input_question = 'Is there a purple object'
 tokenized_question = torch.LongTensor(
     [1] + [question_token_to_idx[f] for f in input_question.split(' ')] + [2]).unsqueeze(0).to('cuda')
 
@@ -301,5 +341,5 @@ att_maps = gradCAM(
     inputs={'questions': tokenized_question, 'feats': image_tensor}, target=None,
     layer=layer)
 
-for att_map in att_maps:
-    viz_attn(image_np, att_map, True)
+for i, att_map in enumerate(att_maps):
+    single_viz_attn(image_np, att_map, True, model_name=model_name, name=name + f'_{i}')

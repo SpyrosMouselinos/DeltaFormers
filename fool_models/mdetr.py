@@ -68,7 +68,7 @@ class MDetrWrapper:
                        [0.494, 0.184, 0.556], [0.466, 0.674, 0.188], [0.301, 0.745, 0.933]]
 
         self.transform = T.Compose([
-            T.Resize(800),
+            T.Resize(700),
             # T.ToTensor(),
             # T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         ])
@@ -98,7 +98,7 @@ class MDetrWrapper:
                                           image[:, :, c])
             return image
 
-        plt.figure(figsize=(16, 10))
+        plt.figure(figsize=(16, 16))
         np_image = np.array(pil_img)
         ax = plt.gca()
         colors = self.COLORS * 100
@@ -109,7 +109,9 @@ class MDetrWrapper:
             ax.add_patch(plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin,
                                        fill=False, color=c, linewidth=3))
             text = f'{l}: {s:0.2f}'
-            ax.text(xmin, ymin, text, fontsize=15, bbox=dict(facecolor='white', alpha=0.8))
+            if 'red' in text:
+                xmin -= 60
+            ax.text(xmin, ymin, text, fontsize=30, bbox=dict(facecolor='white', alpha=1))
 
             if mask is None:
                 continue
@@ -129,9 +131,10 @@ class MDetrWrapper:
         std = np.array([0.229, 0.224, 0.224]).reshape(1, 3, 1, 1)
         np_image = (np_image * std) + mean
         np_image = np_image[0].transpose(1, 2, 0)[None]
-        plt.imshow(np_image[0])
         plt.axis('off')
+        plt.imshow(np_image[0])
         plt.show()
+
 
     def load_mdetr(self):
         if find_platform() == 'WIN':

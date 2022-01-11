@@ -91,8 +91,11 @@ def inference_with_mdetr(loader=None, model=None, resnet_extractor=None):
 
 
 def sinference_with_mdetr(model=None, loader=None, resnet_extractor=None):
-    img = imread('C:\\Users\\Guldan\\Desktop\\DeltaFormers\\data\\images\\val\\CLEVR_val_000000.png')
-    question = 'How many gray cubes are there?'
+    # ORG #
+    #question = 'Do the object behind the big matte sphere and the thing on the right side of the red thing have the same material?'
+    question = 'The red thing that is the same material as the brown cube is what size?'
+    #CLEVR_val_002947
+    img = imread('C:\\Users\\Guldan\\Desktop\\DeltaFormers\\fool_models\\image_resources\\objectcentric\\mdert_val_002947.png')
     #question_l = [1, 10, 85, 14, 25, 30, 64, 66, 84, 74, 75, 21, 84, 45, 86, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     try:
         img = rgba2rgb(img)
