@@ -287,6 +287,10 @@ def command_template(num_images,
                      output_scene_file=OUTPUT_SCENE_FILE_,
                      **kwargs
                      ):
+    # Check If current GPU has support for 2.79 #
+    gpu_support = 1
+    if os.getlogin() == "mouse":
+        gpu_support = 0
     key_light_jitter = [str(f) for f in key_light_jitter]
     fill_light_jitter = [str(f) for f in fill_light_jitter]
     back_light_jitter = [str(f) for f in back_light_jitter]
@@ -301,7 +305,7 @@ def command_template(num_images,
       --output_image_dir={output_image_dir} \
       --output_scene_dir={output_scene_dir} \
       --output_scene_file={output_scene_file} \
-      --use_gpu=1 --render_num_samples=128 --width=224 --height=224 --start_idx={start_idx}'
+      --use_gpu={gpu_support} --render_num_samples=128 --width=224 --height=224 --start_idx={start_idx}'
     return cmd_template
 
 
@@ -346,7 +350,6 @@ def render_image(key_light_jitter=[1, 2, 3, 4, 5],
                  clean_before=False,
                  assemble_after=False,
                  ):
-
     if clean_before:
         for target in os.listdir(OUTPUT_IMAGE_DIR_):
             if split in target:
