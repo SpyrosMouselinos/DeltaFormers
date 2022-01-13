@@ -291,7 +291,7 @@ def command_template(num_images,
     fill_light_jitter = [str(f) for f in fill_light_jitter]
     back_light_jitter = [str(f) for f in back_light_jitter]
     camera_jitter = [str(f) for f in camera_jitter]
-    cmd_template = f'{find_platform_exec()}  -noaudio --background --python {UP_TO_HERE_}/generation/render_images.py > /dev/null 2>&1 -- --num_images={num_images} \
+    cmd_template = f'{find_platform_exec()}  -noaudio --background --python {UP_TO_HERE_}/generation/render_images.py -- --num_images={num_images} \
       --key_light_jitter={",".join(key_light_jitter)} \
       --fill_light_jitter={",".join(fill_light_jitter)} \
       --back_light_jitter={",".join(back_light_jitter)} \

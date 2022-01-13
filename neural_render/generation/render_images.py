@@ -261,16 +261,21 @@ def render_scene(args,
     render_args.resolution_x = args.width
     render_args.resolution_y = args.height
     render_args.resolution_percentage = 100
-    render_args.tile_x = args.render_tile_size
-    render_args.tile_y = args.render_tile_size
     if args.use_gpu >= 1:
         # Blender changed the API for enabling CUDA at some point
         if bpy.app.version < (2, 78, 0):
             bpy.context.user_preferences.system.compute_device_type = 'CUDA'
             bpy.context.user_preferences.system.compute_device = 'CUDA_0'
+            render_args.tile_x = args.render_tile_size
+            render_args.tile_y = args.render_tile_size
+        elif bpy.app.version > (2, 99, 0):
+            cycles_prefs = bpy.context.preferences.addons['cycles'].preferences
+            cycles_prefs.compute_device_type = 'CUDA'
         else:
             cycles_prefs = bpy.context.user_preferences.addons['cycles'].preferences
             cycles_prefs.compute_device_type = 'CUDA'
+            render_args.tile_x = args.render_tile_size
+            render_args.tile_y = args.render_tile_size
 
     # Some CYCLES-specific stuff
     bpy.data.worlds['World'].cycles.sample_as_light = True
@@ -291,7 +296,10 @@ def render_scene(args,
     }
 
     # Put a plane on the ground so we can compute cardinal directions
-    bpy.ops.mesh.primitive_plane_add(radius=5)
+    if bpy.app.version > (2, 99, 0):
+        bpy.ops.mesh.primitive_plane_add(size=5)
+    else:
+        bpy.ops.mesh.primitive_plane_add(radius=5)
     plane = bpy.context.object
     current_item = output_index - output_index_start
 
@@ -303,9 +311,15 @@ def render_scene(args,
     # them in the scene structure
     camera = bpy.data.objects['Camera']
     plane_normal = plane.data.vertices[0].normal
-    cam_behind = camera.matrix_world.to_quaternion() * Vector((0, 0, -1))
-    cam_left = camera.matrix_world.to_quaternion() * Vector((-1, 0, 0))
-    cam_up = camera.matrix_world.to_quaternion() * Vector((0, 1, 0))
+    if bpy.app.version > (2, 99, 0):
+        cam_behind = camera.matrix_world.to_quaternion() @ Vector((0, 0, -1))
+        cam_left = camera.matrix_world.to_quaternion() @ Vector((-1, 0, 0))
+        cam_up = camera.matrix_world.to_quaternion() @ Vector((0, 1, 0))
+    else:
+        cam_behind = camera.matrix_world.to_quaternion() * Vector((0, 0, -1))
+        cam_left = camera.matrix_world.to_quaternion() * Vector((-1, 0, 0))
+        cam_up = camera.matrix_world.to_quaternion() * Vector((0, 1, 0))
+
     plane_behind = (cam_behind - cam_behind.project(plane_normal)).normalized()
     plane_left = (cam_left - cam_left.project(plane_normal)).normalized()
     plane_up = cam_up.project(plane_normal).normalized()
@@ -540,12 +554,19 @@ def render_shadeless(blender_objects, path='flat.png', old_behaviour=False):
     # Cache the render args we are about to clobber
     old_filepath = render_args.filepath
     old_engine = render_args.engine
-    old_use_antialiasing = render_args.use_antialiasing
+    try:
+        old_use_antialiasing = render_args.use_antialiasing
+    except:
+        pass
 
     # Override some render settings to have flat shading
     render_args.filepath = path
-    render_args.engine = 'BLENDER_RENDER'
-    render_args.use_antialiasing = False
+    try:
+        render_args.engine = 'BLENDER_EEVEE'
+        render_args.simplify_gpencil_antialiasing = False
+    except:
+        render_args.engine = 'BLENDER_RENDER'
+        render_args.use_antialiasing = False
 
     # Move the lights and ground to layer 2 so they don't render
     butils.set_layer(bpy.data.objects['Lamp_Key'], 2)
@@ -585,7 +606,10 @@ def render_shadeless(blender_objects, path='flat.png', old_behaviour=False):
     # Set the render settings back to what they were
     render_args.filepath = old_filepath
     render_args.engine = old_engine
-    render_args.use_antialiasing = old_use_antialiasing
+    try:
+        render_args.use_antialiasing = old_use_antialiasing
+    except:
+        pass
 
     return object_colors
 
